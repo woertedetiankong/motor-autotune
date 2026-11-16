@@ -25,7 +25,7 @@ Steps 1 to 8 need no hardware. Step 9 needs a document from the owner. Steps 10 
 - [x] 2. Units and bench limits
 - [x] 3. Adapter contract, clocks and the simulated servo
 - [x] 4. Experiment runner and safety monitor
-- [ ] 5. Run records and plots
+- [x] 5. Run records and plots
 - [ ] 6. Analysis: step response and frequency response
 - [ ] 7. Command line and `check`, on the simulated servo
 - [ ] 8. Model fit, `characterize` and simulator export, on the simulated servo

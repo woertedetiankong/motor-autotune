@@ -1,3 +1,4 @@
+import datetime
 import math
 
 import pytest
@@ -55,3 +56,10 @@ def test_monotonic_clock_uses_the_monotonic_clock_and_sleep(monkeypatch):
     assert slept == [pytest.approx(0.5)]
     clock.wait_until_s(50.0)  # in the past: no sleep
     assert len(slept) == 1
+
+
+def test_utc_now_is_calendar_time_in_utc():
+    from servobench.clock import utc_now
+
+    moment = utc_now()
+    assert moment.utcoffset() == datetime.timedelta(0)

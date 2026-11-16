@@ -13,6 +13,7 @@ the library allowed to call ``time.sleep`` or read the computer's clock.
 
 from __future__ import annotations
 
+import datetime
 import math
 import time
 from abc import ABC, abstractmethod
@@ -49,6 +50,15 @@ class MonotonicClock(Clock):
             if remaining_s <= 0:
                 return
             time.sleep(remaining_s)
+
+
+def utc_now() -> datetime.datetime:
+    """The computer's calendar date and time, in UTC.
+
+    Only for naming and dating run records, which people read. Never for timing
+    an experiment: that is always the adapter's clock.
+    """
+    return datetime.datetime.now(datetime.UTC)
 
 
 class VirtualClock(Clock):
