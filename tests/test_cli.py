@@ -197,3 +197,40 @@ def test_characterize_without_a_load_is_refused_before_contact(tmp_path, monkeyp
     output = json_of(capsys)
     assert output["verdict"] == "refused" and "[load]" in output["summary"]
     assert not (tmp_path / "runs").exists()
+
+
+# == Regressions from the outside review, 2026-11-16 ==================================
+
+
+def _unsafe_then(error):
+    """A command that runs one experiment whose safe state is not confirmed, then raises."""
+    from servobench.adapters.sim import SimServo
+    from servobench.contract import NoReply
+    from servobench.experiments.runner import Outcome, run_experiment
+    from servobench.experiments.spec import Hold
+
+    class Deaf(SimServo):
+        def enter_safe_state(self):
+            raise NoReply("no answer")
+
+    def command(bench, **kwargs):
+        result = run_experiment(Deaf(), bench, Hold(0.0, 1.0))
+        assert result.outcome is Outcome.SAFE_STATE_NOT_CONFIRMED
+        raise error
+
+    return command
+
+
+@pytest.mark.parametrize("error", [KeyboardInterrupt(), RuntimeError("bug after the run")])
+def test_a_failure_after_an_unconfirmed_safe_state_never_reads_as_safe(
+    tmp_path, monkeypatch, capsys, error
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "bench.toml").write_text(TEMPLATE, encoding="utf-8")
+    monkeypatch.setattr(cli, "run_check", _unsafe_then(error))
+    assert main(["check", "--json"]) == 4
+    output = json_of(capsys)
+    assert output["verdict"] == "safe_state_not_confirmed"
+    assert output["needs_human"] is True and "cut its power" in output["next"]
+    for claim in ("had not left the actuator enabled", "never leaves the actuator enabled"):
+        assert claim not in output["next"] and claim not in output["summary"]

@@ -74,7 +74,8 @@ WHEN_TOO_WARM = (WAIT, REFUSE)
 class RunnerSettings:
     """How the experiment runner behaves, from the [runner] section."""
 
-    # A run is stopped when more than this many reads in a row get no reply.
+    # A run is stopped when more than this many reads in a row, or this many
+    # fault polls in a row, get no reply.
     missed_replies_max: int
     # Speed of the ramp from where the actuator is to where the experiment starts.
     approach_speed_rad_s: float
@@ -84,6 +85,11 @@ class RunnerSettings:
     when_too_warm: str
     # The longest the runner waits for the actuator to cool before refusing.
     cool_wait_max_s: float
+    # The longest an enabled actuator may go without a good reading of the
+    # signals the safety monitor checks, however the time was lost (missed
+    # replies, slow replies, a stalled call). Also how far a run may overrun
+    # its plan. An experiment must sample at least four times within it.
+    sample_gap_max_s: float
 
 
 @dataclass(frozen=True)
@@ -161,6 +167,7 @@ LIMIT_FIELDS: tuple[tuple[str, str, Dimension], ...] = (
 RUNNER_FIELDS: tuple[tuple[str, str, Dimension], ...] = (
     ("approach_speed", "approach_speed_rad_s", Dimension.ANGULAR_VELOCITY),
     ("cool_wait_max", "cool_wait_max_s", Dimension.TIME),
+    ("sample_gap_max", "sample_gap_max_s", Dimension.TIME),
 )
 
 CHECK_FIELDS: tuple[tuple[str, str, Dimension], ...] = (
@@ -453,6 +460,9 @@ def _read_runner(table: dict | None, problems: list[str]) -> RunnerSettings | No
     if quantities["cool_wait_max"] < 0:
         problems.append("[runner] cool_wait_max must not be negative")
         ok = False
+    if quantities["sample_gap_max"] <= 0:
+        problems.append("[runner] sample_gap_max must be greater than zero")
+        ok = False
     if not ok:
         return None
     return RunnerSettings(
@@ -594,9 +604,19 @@ follow_time_max = "1 s"
 [runner]
 # How the experiment runner behaves.
 #
-# A run stops when more than this many reads in a row get no reply.
-# A whole number of replies, written without quotes.
+# A run stops when more than this many reads in a row, or this many fault
+# polls in a row, get no reply. A whole number of replies, written without
+# quotes.
 missed_replies_max = 3
+# The longest the actuator may be enabled without a good reading of its
+# position, current, voltage and temperature. A run stops when this passes,
+# however the time was lost: missed replies, slow replies or a call that
+# stalled. A run that falls this far behind its plan stops too. An experiment
+# must sample at least four times within it, so with "200 ms" at 20 Hz or
+# faster. Keep it short: for this long, only the actuator's own protections
+# and the power supply act. 200 ms suits the simulated servo (three missed
+# replies cost it about 90 ms); set it from your bus's reply timeout.
+sample_gap_max = "200 ms"
 # Before an experiment, the actuator is moved from where it is to where the
 # experiment starts by a ramp at this speed. At most speed_max.
 approach_speed = "20 deg/s"

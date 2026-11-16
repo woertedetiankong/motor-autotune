@@ -429,3 +429,114 @@ def test_the_text_output_lists_each_parameter(cli_run, capsys):
     )}, exit_code=ExitCode(output["exit_code"])))  # fmt: skip
     assert "torque_max_n_m" in text and "not identifiable; at least" in text
     assert "held-out RMS error: fitted" in text
+
+
+# == Regressions from the outside review, 2026-11-16 ==================================
+#
+# Bug 2: a safe state that was not confirmed was reported as safe after a later
+# failure. Bug 4: an export that could not be written still returned success.
+
+# Text that says or implies the actuator is safe; none of it may follow an
+# unconfirmed safe state.
+SAFE_CLAIMS = (
+    "puts the actuator in its safe state before it returns",
+    "is in its safe state",
+    "never leaves the actuator enabled",
+)
+
+
+def _fail_after(count, error):
+    """A stand-in for a records writer that works ``count`` times, then raises ``error``."""
+    real = {"write_run": records.write_run, "new_run_directory": records.new_run_directory}
+    calls = {"n": 0}
+
+    def make(name):
+        def writer(*args, **kwargs):
+            calls["n"] += 1
+            if calls["n"] > count:
+                raise error
+            return real[name](*args, **kwargs)
+
+        return writer
+
+    return make
+
+
+def _assert_unsafe_reported(result):
+    assert result.verdict == "safe_state_not_confirmed", result.summary
+    assert result.exit_code == ExitCode.DEVICE and result.needs_human is True
+    assert result.summary.startswith("SAFE STATE NOT CONFIRMED")
+    assert "cut its power" in result.next
+    for claim in SAFE_CLAIMS:
+        assert claim not in result.summary, claim
+        assert claim not in (result.next or ""), claim
+
+
+def test_an_unconfirmed_safe_state_survives_a_run_record_that_cannot_be_written(
+    tmp_path, monkeypatch
+):
+    servo = _SafeStateFailsAfterCheck(SimConfig(), load=LOAD)
+    # check's record is written; the record of the first experiment is not.
+    writer = _fail_after(1, OSError(28, "No space left on device"))
+    monkeypatch.setattr(records, "write_run", writer("write_run"))
+    result = run_characterize(BENCH, runs_dir=tmp_path, adapter=servo)
+    _assert_unsafe_reported(result)
+    assert "No space left on device" in result.summary
+
+
+@pytest.mark.parametrize("where", ["analysis", "judgement", "command record"])
+def test_an_unconfirmed_safe_state_survives_any_later_failure(tmp_path, monkeypatch, where):
+    from servobench.commands import characterize as module
+
+    servo = _SafeStateFailsAfterCheck(SimConfig(), load=LOAD)
+
+    def broken(*args, **kwargs):
+        raise ZeroDivisionError(f"the {where} broke")
+
+    if where == "analysis":
+        monkeypatch.setattr(module, "analyse", broken)
+    elif where == "judgement":
+        monkeypatch.setattr(module, "judge_run", broken)  # check has its own
+    else:
+        monkeypatch.setattr(records, "new_run_directory", broken)
+    result = run_characterize(BENCH, runs_dir=tmp_path, adapter=servo)
+    _assert_unsafe_reported(result)
+    # Every record that was written says the same as the result.
+    runs, problems = records.list_runs(tmp_path)
+    assert not problems
+    characterize_runs = [run for run in runs if run.command == "characterize"]
+    assert characterize_runs  # the experiment's record, the command's, or both
+    for run in characterize_runs:
+        assert run.verdict == "safe_state_not_confirmed", (run.name, run.verdict)
+    if where != "command record":
+        assert records.load_run(result.run_dir).verdict == "safe_state_not_confirmed"
+
+
+def test_an_export_that_cannot_be_written_is_a_failure_and_keeps_the_numbers(
+    tmp_path, monkeypatch
+):
+    def no_directory(*args, **kwargs):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(records, "new_run_directory", no_directory)
+    result = characterize(tmp_path)
+    assert result.verdict == "error", result.summary
+    assert result.exit_code == ExitCode.DEVICE and result.needs_human is True
+    assert "No space left on device" in result.summary
+    assert result.run_dir is None
+    assert not any(Path(path).name in (JSON_FILE, MUJOCO_FILE) for path in result.files)
+    # The measured numbers are still returned, and the files that were written listed.
+    assert set(PARAMETERS) <= set(result.metrics["parameters"])
+    assert result.metrics["validation"]["fit_quality"] == "good"
+    assert result.files and all(Path(path).is_file() for path in result.files)
+
+
+def test_an_experiment_record_that_cannot_be_written_stops_characterize(tmp_path, monkeypatch):
+    writer = _fail_after(1, OSError(28, "No space left on device"))
+    monkeypatch.setattr(records, "write_run", writer("write_run"))
+    result = characterize(tmp_path)
+    assert result.verdict == "error", result.summary
+    assert result.exit_code == ExitCode.DEVICE and result.needs_human is True
+    assert "could not be written" in result.summary
+    assert list(result.metrics["experiments"]) == ["steps"]  # nothing more was run
+    assert "parameters" not in result.metrics

@@ -29,7 +29,8 @@ The sequence:
    bench file says). If a run does not complete (refused, aborted, an error,
    the safe state not confirmed), the sequence stops there: nothing more is
    run, nothing is fitted, and the verdict, exit code and ``needs_human`` are
-   ``judge_run``'s, as for ``check``.
+   ``judge_run``'s, as for ``check``. If a run's record cannot be written, the
+   sequence stops there too, with verdict ``error`` (exit 4).
 3. **The fit** (``servobench.analysis.fit``) on the fitted experiments, and the
    held-out experiment replayed with the default placeholder parameters and
    with the fitted ones.
@@ -47,7 +48,15 @@ The sequence:
 The files: the per-experiment run records (``parts``), and one record of the
 command itself holding ``servo_model.json`` and ``servo_model_mujoco.xml``
 (``servobench.export``) and ``holdout_overlay.png``, the measured, default and
-fitted responses on the held-out experiment.
+fitted responses on the held-out experiment. The files are the command's
+product: if the record or the export cannot be written, the verdict is
+``error`` (exit 4) and the numbers measured are still in ``metrics``
+(``record_not_written``).
+
+The safe state. The whole command runs inside ``watch_safe_state``, so once
+any run, check's included, has ended with its safe state not confirmed, the
+verdict is ``safe_state_not_confirmed`` whatever fails after it, and the
+record says the same (``keep_safe_state_report``).
 """
 
 from __future__ import annotations
@@ -90,10 +99,18 @@ from servobench.commands import (
     ExitCode,
     error_details,
     judge_run,
+    keep_safe_state_report,
+    record_not_written,
 )
 from servobench.commands.check import run_check
 from servobench.contract import TEMPERATURE, VOLTAGE, Adapter, AdapterError, Description
-from servobench.experiments.runner import RunResult, run_experiment
+from servobench.experiments.runner import (
+    RunResult,
+    SafeState,
+    SafeStateWatch,
+    run_experiment,
+    watch_safe_state,
+)
 from servobench.experiments.spec import ExperimentSpec, Step, SteppedSine, command_band_rad
 from servobench.limits import Bench
 from servobench.model import DEFAULT_PARAMS, PendulumLoad, ServoParams, simulate
@@ -411,31 +428,33 @@ def run_characterize(
     returned as a result, an unexpected exception included; only an unknown
     adapter name is raised (``UnknownAdapter``), as a usage error.
     """
-    job = _Characterize(bench, Path(runs_dir))
-    opened = adapter is None
-    try:
-        if bench.load is None:
-            return job.no_load()
-        if adapter is None:
-            try:
-                adapter = open_adapter(bench)
-            except AdapterError as error:
-                return job.unreachable(error)
+    with watch_safe_state() as watch:
+        job = _Characterize(bench, Path(runs_dir), watch)
+        opened = adapter is None
         try:
-            return job.run(adapter)
-        finally:
-            if opened:
-                adapter.close()
-    except UnknownAdapter:
-        raise
-    except Exception as error:  # noqa: BLE001 - reported in full in the result
-        return job.crashed(error)
+            if bench.load is None:
+                return job.no_load()
+            if adapter is None:
+                try:
+                    adapter = open_adapter(bench)
+                except AdapterError as error:
+                    return job.unreachable(error)
+            try:
+                return keep_safe_state_report(job.run(adapter), watch)
+            finally:
+                if opened:
+                    adapter.close()
+        except UnknownAdapter:
+            raise
+        except Exception as error:  # noqa: BLE001 - reported in full in the result
+            return keep_safe_state_report(job.crashed(error), watch)
 
 
 class _Characterize:
-    def __init__(self, bench: Bench, runs_dir: Path) -> None:
+    def __init__(self, bench: Bench, runs_dir: Path, watch: SafeStateWatch) -> None:
         self.bench = bench
         self.runs_dir = runs_dir
+        self.watch = watch  # every run, check's included, whose safe state was not confirmed
         self.description: Description | None = None
         self.check: CommandResult | None = None
         self.plan: ExperimentPlan | None = None
@@ -473,13 +492,16 @@ class _Characterize:
         )
 
     def crashed(self, error: BaseException) -> CommandResult:
-        done = ", ".join(f"{name}: {r.outcome.value}" for name, r in self.results.items())
-        state = (
-            f"The experiments that ran ({done}) each ended in the runner, which puts the actuator"
-            " in its safe state before it returns."
-            if done
-            else "No characterize experiment had run."
+        done = ", ".join(
+            f"{name}: {r.outcome.value}, safe state {r.safe_state.status.value}"
+            for name, r in self.results.items()
         )
+        if not done:
+            state = "No characterize experiment had run."
+        elif all(r.safe_state.status is SafeState.CONFIRMED for r in self.results.values()):
+            state = f"The experiments that ran ({done}) each ended with the safe state confirmed."
+        else:
+            state = f"The experiments that ran: {done}."
         result = CommandResult(
             command=COMMAND,
             verdict=ERROR,
@@ -492,6 +514,7 @@ class _Characterize:
             metrics=self.base_metrics(),
             error=error_details(error),
         )
+        keep_safe_state_report(result, self.watch)  # before the record, so it says the same
         self.write_record(result)
         return result
 
@@ -534,18 +557,25 @@ class _Characterize:
                 except Exception as error:  # noqa: BLE001 - noted, the record still written
                     self.notes.append(f"{planned.name}: analysis failed: {error!r}")
             judgement = judge_run(result)
-            path = records.write_run(
-                result,
-                command=COMMAND,
-                runs_dir=self.runs_dir,
-                verdict=None if judgement is None else judgement.verdict,
-                metrics={
-                    "characterize_experiment": planned.name,
-                    "role": planned.role,
-                    **({} if analysis is None else {analysis_key(analysis): as_metrics(analysis)}),
-                },
-                ended_utc=ended,
-            )
+            try:
+                path = records.write_run(
+                    result,
+                    command=COMMAND,
+                    runs_dir=self.runs_dir,
+                    verdict=None if judgement is None else judgement.verdict,
+                    metrics={
+                        "characterize_experiment": planned.name,
+                        "role": planned.role,
+                        **(
+                            {}
+                            if analysis is None
+                            else {analysis_key(analysis): as_metrics(analysis)}
+                        ),
+                    },
+                    ended_utc=ended,
+                )
+            except Exception as error:  # noqa: BLE001 - the result says so
+                return self.not_recorded(planned, result, judgement, error)
             self.parts[planned.name] = str(path)
             self.add_part_files(path)
             end_s = result.safe_state.t_s
@@ -595,21 +625,40 @@ class _Characterize:
         return self.finish(result)
 
     def stopped(self, planned: PlannedExperiment, result: RunResult, judgement) -> CommandResult:
+        return self.finish(self.stopped_result(planned, result, judgement))
+
+    def stopped_result(self, planned, result: RunResult, judgement) -> CommandResult:
         names = [p.name for p in self.plan.experiments]
         number = names.index(planned.name) + 1
         skipped = names[number:]
         later = f"; {', '.join(skipped)} not run" if skipped else ""
-        return self.finish(
-            CommandResult(
-                command=COMMAND,
-                verdict=judgement.verdict,
-                summary=f"Characterize stopped at experiment {number} of {len(names)}"
-                f" ({planned.name}){later}, and nothing was fitted. {result.summary}",
-                exit_code=judgement.exit_code,
-                needs_human=judgement.needs_human,
-                next=judgement.next,
-            )
+        return CommandResult(
+            command=COMMAND,
+            verdict=ERROR if judgement is None else judgement.verdict,
+            summary=f"Characterize stopped at experiment {number} of {len(names)}"
+            f" ({planned.name}){later}, and nothing was fitted. {result.summary}",
+            exit_code=ExitCode.DEVICE if judgement is None else judgement.exit_code,
+            needs_human=True if judgement is None else judgement.needs_human,
+            next=None if judgement is None else judgement.next,
         )
+
+    def not_recorded(self, planned, result: RunResult, judgement, error) -> CommandResult:
+        """An experiment's run record could not be written: stop, and say so.
+
+        Nothing more is run: without the record the run's data and its end time
+        (for the next invocation's cool-down) are lost, and whatever stopped this
+        write, a full disk for example, would stop the next.
+        """
+        command_result = self.stopped_result(planned, result, judgement)
+        record_not_written(
+            command_result,
+            error,
+            f"The run record of experiment {planned.name!r}",
+            "Tell the human that this experiment's record was not kept, so nothing more was run"
+            " and nothing was fitted; find out why (a full disk, permissions) before running"
+            " characterize again.",
+        )
+        return self.finish(command_result)
 
     # -- the fit --------------------------------------------------------------------------
 
@@ -958,6 +1007,8 @@ class _Characterize:
     def finish(self, result: CommandResult, *, exported=None, mujoco=None, overlay=None):
         if not result.metrics:
             result.metrics = self.base_metrics()
+        # Before the record, so that the record says the same.
+        keep_safe_state_report(result, self.watch)
         if self.check is not None and self.check.run_dir:
             self.files[str(Path(self.check.run_dir) / records.RUN_FILE)] = (
                 "check's run record (the gate before characterize moved the actuator)"
@@ -972,6 +1023,8 @@ class _Characterize:
         identity_source = description
         if identity_source is None and self.results:
             identity_source = next(iter(self.results.values())).description
+        own: dict[str, str] = {}  # what has been written into the command's directory
+        path = None
         try:
             if identity_source is not None:
                 adapter, device_id = (
@@ -983,7 +1036,6 @@ class _Characterize:
                 adapter = target.adapter
                 device_id = None if target.id is None else str(target.id)
             path = records.new_run_directory(COMMAND, adapter, device_id, self.runs_dir)
-            own: dict[str, str] = {}
             if exported is not None:
                 (path / export.JSON_FILE).write_text(
                     json.dumps(exported, indent=2, allow_nan=False) + "\n", encoding="utf-8"
@@ -1031,12 +1083,28 @@ class _Characterize:
                 notes=self.notes,
             )  # fmt: skip
         except Exception as error:  # noqa: BLE001 - the result says so
-            result.summary += (
-                f" The characterize record could not be written: {type(error).__name__}: {error}."
+            exports = "" if exported is None else f" and its export files ({export.JSON_FILE}"
+            if exported is not None:
+                exports += f", {export.MUJOCO_FILE})" if mujoco is not None else ")"
+            record_not_written(
+                result,
+                error,
+                f"The characterize record{exports}",
+                "Tell the human that "
+                + (
+                    "the fitted parameters were not saved for a simulator: the numbers are only"
+                    " in this output's metrics. "
+                    if exported is not None
+                    else ""
+                )
+                + "Find out why (a full disk, permissions) before running characterize again;"
+                " do not rerun it to get the files.",
             )
-            result.needs_human = True
-            if result.error is None:
-                result.error = error_details(error)
+            # What was written is still there and listed: the experiments' records,
+            # and anything that reached the command's own directory.
+            files = {str(path / name): what for name, what in own.items()} if path else {}
+            files.update(self.files)
+            result.files = files
             return
         result.run_dir = str(path)
         files = {str(path / records.RUN_FILE): "the characterize record (run.json)"}

@@ -26,20 +26,40 @@ refused                    4     ... because the device reports a fault or
                                  does not answer
 aborted                    3     the actuator was enabled and the safety
                                  monitor stopped it, or Ctrl-C did
-aborted                    4     ... because the device reported a fault or
-                                 stopped answering
+aborted                    4     ... because the device reported a fault,
+                                 stopped answering, or answered too slowly
+                                 (no good reading for sample_gap_max, or the
+                                 run fell behind its plan)
 error                      2     usage or bench-file error
 error                      4     the tool, the adapter or the device raised
-                                 an error; the actuator could not be reached
+                                 an error; the actuator could not be reached;
+                                 or the command's record or export could not
+                                 be written
 safe_state_not_confirmed   4     the actuator may still be live
 =========================  ====  ==========================================
 
 The rule behind the exit codes: 2 when nothing was wrong with the actuator
 but the request or the bench file was; 3 when the tool's own safety layer
 stopped or refused motion; 4 when the device or the link to it is the
-problem, or the safe state could not be confirmed. ``judge_run`` applies it to
-a runner result. ``needs_human`` says, for every result, whether an agent must
-stop and hand over to a human rather than try something else.
+problem, the tool failed, or the safe state could not be confirmed.
+``judge_run`` applies it to a runner result. ``needs_human`` says, for every
+result, whether an agent must stop and hand over to a human rather than try
+something else.
+
+Two rules hold for every command, and live here so that each command applies
+them the same way:
+
+- ``keep_safe_state_report``: once any run in a command has ended with its safe
+  state not confirmed, the verdict is ``safe_state_not_confirmed``, whatever
+  happened after (a record that cannot be written, an analysis or fit that
+  fails, any exception), and nothing in the result says the actuator is safe.
+  A command wraps itself in ``runner.watch_safe_state()``, which the runner
+  tells before ``run_experiment`` returns, and passes every result it returns
+  or records through this function.
+- ``record_not_written``: a record or export that cannot be written is a
+  failure of the command (``error``, exit 4), not a footnote, because the
+  files are what the command was run for; the numbers measured are still
+  returned. A ``safe_state_not_confirmed`` verdict stays.
 """
 
 from __future__ import annotations
@@ -51,7 +71,7 @@ from typing import Any
 
 from servobench.experiments import monitor as checks
 from servobench.experiments import runner
-from servobench.experiments.runner import Outcome, RunResult
+from servobench.experiments.runner import Outcome, RunResult, SafeStateWatch
 
 
 class ExitCode(IntEnum):
@@ -69,6 +89,15 @@ REFUSED = "refused"
 ABORTED = "aborted"
 ERROR = "error"
 SAFE_STATE_NOT_CONFIRMED = "safe_state_not_confirmed"
+
+# What to do when the safe state was not confirmed. Every such result's next starts with it.
+SAFE_STATE_NEXT = (
+    "Tell the human now that the actuator may still be powered and driving its output,"
+    " and that they should cut its power. Run nothing against it, read-only commands"
+    " included, until a human has checked it."
+)
+# How every such result's summary starts.
+SAFE_STATE_SUMMARY_START = "SAFE STATE NOT CONFIRMED"
 
 
 @dataclass
@@ -113,8 +142,81 @@ def error_details(error: BaseException) -> dict[str, str]:
     }
 
 
+def keep_safe_state_report(result: CommandResult, watch: SafeStateWatch | None) -> CommandResult:
+    """``result``, made to say so if any run inside ``watch`` left the safe state unconfirmed.
+
+    The verdict becomes ``safe_state_not_confirmed`` (exit 4, ``needs_human``),
+    the summary starts with it, and ``next`` starts with what to do. A
+    ``next`` written by code that did not know (for example one that says the
+    runner left the actuator in its safe state) is replaced, not kept. Safe to
+    apply more than once.
+    """
+    if watch is None or watch.all_confirmed:
+        return result
+    if result.verdict != SAFE_STATE_NOT_CONFIRMED:
+        replaced = result.verdict
+        result.verdict = SAFE_STATE_NOT_CONFIRMED
+        tool_failed = (
+            " servobench also failed after that run; give the human the traceback under error."
+            if result.error is not None
+            else ""
+        )
+        result.next = f"{SAFE_STATE_NEXT}{tool_failed}"
+        if not result.summary.startswith(SAFE_STATE_SUMMARY_START):
+            result.summary = (
+                f"{_unconfirmed_lead(watch)} What the command reported after that (it would"
+                f" have been {replaced}): {result.summary}"
+            )
+    elif not result.summary.startswith(SAFE_STATE_SUMMARY_START):
+        result.summary = f"{_unconfirmed_lead(watch)} {result.summary}"
+    if not (result.next or "").startswith(SAFE_STATE_NEXT):
+        result.next = f"{SAFE_STATE_NEXT} {result.next or ''}".strip()
+    result.exit_code = ExitCode.DEVICE
+    result.needs_human = True
+    return result
+
+
+def _unconfirmed_lead(watch: SafeStateWatch) -> str:
+    seen = watch.unconfirmed
+    first = seen[0]
+    runs = "a run" if len(seen) == 1 else f"{len(seen)} runs"
+    target = first.adapter + (f" {first.device_id}" if first.device_id else "")
+    return (
+        f"{SAFE_STATE_SUMMARY_START}. After {runs} of this command the device ({target}) never"
+        f" confirmed its safe state ({first.safe_state}) in {first.report.attempts} attempts."
+        " Treat the actuator as live and still driving: cut its power now, and run nothing until"
+        " a human has checked it."
+    )
+
+
+def record_not_written(
+    result: CommandResult, error: BaseException, what: str, consequence: str
+) -> CommandResult:
+    """``result`` after ``what`` (the record, an export) could not be written.
+
+    The files are the command's product, so failing to write them is a failure
+    of the command: the verdict becomes ``error`` with exit 4, unless it is
+    ``safe_state_not_confirmed``, which nothing replaces. ``needs_human`` is
+    set, the metrics are left as they are, so the numbers measured are still
+    returned, and ``consequence`` says what is missing because of it.
+    """
+    result.summary += f" {what} could not be written: {type(error).__name__}: {error}."
+    if result.verdict != SAFE_STATE_NOT_CONFIRMED:
+        result.verdict = ERROR
+        result.exit_code = ExitCode.DEVICE
+    result.needs_human = True
+    result.next = f"{result.next or ''} {consequence}".strip()
+    if result.error is None:
+        result.error = error_details(error)
+    return result
+
+
 def unexpected_error(command: str, error: BaseException) -> CommandResult:
-    """The result for an exception that no command expected: a bug, reported in full."""
+    """The result for an exception that no command expected: a bug, reported in full.
+
+    Its ``next`` assumes every run's safe state was confirmed; the CLI passes
+    it through ``keep_safe_state_report``, which replaces that when it was not.
+    """
     return CommandResult(
         command=command,
         verdict=ERROR,
@@ -143,7 +245,12 @@ class RunJudgement:
 
 
 # Stop kinds that mean the device or the link to it is the problem.
-_DEVICE_KINDS = (checks.DEVICE_FAULT, checks.MISSED_REPLIES)
+_DEVICE_KINDS = (
+    checks.DEVICE_FAULT,
+    checks.MISSED_REPLIES,
+    checks.SAMPLE_GAP,
+    runner.BEHIND_SCHEDULE,
+)
 # Refusals at validation: the request or the bench file, before any contact.
 _USAGE_KINDS = (runner.SPEC_INVALID, runner.ADAPTER_UNSUITABLE)
 
@@ -155,15 +262,7 @@ def judge_run(result: RunResult) -> RunJudgement | None:
     message = "" if stop is None else stop.message
 
     if result.outcome is Outcome.SAFE_STATE_NOT_CONFIRMED:
-        return RunJudgement(
-            SAFE_STATE_NOT_CONFIRMED,
-            ExitCode.DEVICE,
-            True,
-            "Tell the human now that the actuator may still be powered and driving its output,"
-            " and that they should cut its power. Run nothing against it, read-only commands"
-            " included, until a human has checked it.",
-            kind,
-        )
+        return RunJudgement(SAFE_STATE_NOT_CONFIRMED, ExitCode.DEVICE, True, SAFE_STATE_NEXT, kind)
     if result.outcome is Outcome.COMPLETED:
         return None
     if result.outcome is Outcome.INTERRUPTED:
@@ -201,6 +300,17 @@ def judge_run(result: RunResult) -> RunJudgement | None:
                 f"The device reports a fault ({message}). {state} The tool cannot clear faults:"
                 " a human must find the cause and clear it (often by power-cycling the"
                 " actuator). Tell the human and run nothing until they have."
+            )
+        elif kind == runner.BEHIND_SCHEDULE:
+            text = (
+                f"The run could not keep to its plan ({message}). {state} Its samples do not"
+                " follow the planned experiment; do not analyse them. Tell the human: check the"
+                " cable, the bus settings, and whether the computer was busy or asleep."
+            )
+        elif kind == checks.SAMPLE_GAP:
+            text = (
+                f"The device did not answer in time ({message}). {state} Tell the human:"
+                " check the cable, the connector, the power and the bus settings."
             )
         else:
             text = (

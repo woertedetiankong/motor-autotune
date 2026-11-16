@@ -26,11 +26,13 @@ from servobench.commands import (
     SAFE_STATE_NOT_CONFIRMED,
     CommandResult,
     ExitCode,
+    keep_safe_state_report,
     unexpected_error,
 )
 from servobench.commands import runs as runs_command
 from servobench.commands.characterize import run_characterize
 from servobench.commands.check import run_check
+from servobench.experiments.runner import watch_safe_state
 from servobench.limits import (
     BENCH_FILENAME,
     CHECK_FIELDS,
@@ -176,23 +178,27 @@ def main(argv: list[str] | None = None) -> int:
     if args.command is None:
         result = _usage_error("no command given", parser.format_usage().strip())
         return _emit(result, args.json)
-    try:
-        result = args.handler(args)
-    except KeyboardInterrupt:
-        result = CommandResult(
-            command=args.command,
-            verdict="aborted",
-            summary="Interrupted by Ctrl-C, outside an experiment.",
-            exit_code=ExitCode.SAFETY,
-            needs_human=True,
-            next=(
-                "servobench had not left the actuator enabled: it was only reading, or the"
-                " experiment runner had already put it in its safe state. Run the command again"
-                " only if the human asks for it."
-            ),
-        )
-    except Exception as error:  # noqa: BLE001 - reported in full, never a bare traceback
-        result = unexpected_error(args.command, error)
+    # Whatever ends the command, a run whose safe state was not confirmed is
+    # reported as such: the texts below assume every safe state was confirmed.
+    with watch_safe_state() as watch:
+        try:
+            result = args.handler(args)
+        except KeyboardInterrupt:
+            result = CommandResult(
+                command=args.command,
+                verdict="aborted",
+                summary="Interrupted by Ctrl-C, outside an experiment.",
+                exit_code=ExitCode.SAFETY,
+                needs_human=True,
+                next=(
+                    "servobench had not left the actuator enabled: it was only reading, or the"
+                    " experiment runner had already put it in its safe state. Run the command"
+                    " again only if the human asks for it."
+                ),
+            )
+        except Exception as error:  # noqa: BLE001 - reported in full, never a bare traceback
+            result = unexpected_error(args.command, error)
+        result = keep_safe_state_report(result, watch)
     return _emit(result, args.json)
 
 
@@ -310,6 +316,14 @@ def _emit(result: CommandResult, as_json: bool) -> int:
     except Exception as error:  # noqa: BLE001 - a result that cannot be printed is a bug
         failure = unexpected_error(result.command, error)
         failure.summary += f" (while printing a result whose verdict was {result.verdict})"
+        if result.verdict == SAFE_STATE_NOT_CONFIRMED:
+            # Nothing replaces this verdict, a failure to print it included.
+            failure.verdict = SAFE_STATE_NOT_CONFIRMED
+            failure.summary = (
+                f"{result.summary} (servobench then failed to print the full result:"
+                f" {type(error).__name__}: {error})"
+            )
+            failure.next = result.next
         text = json.dumps(failure.to_json(), indent=2) if as_json else _text(failure)
         result = failure
     stream = sys.stderr if result.exit_code == ExitCode.USAGE and not as_json else sys.stdout

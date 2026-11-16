@@ -190,11 +190,19 @@ def test_missed_replies_are_counted_in_a_row():
     assert "4 reads in a row" in violation.message
 
 
+def readings_until(monitor, end_s, start_s=PERIOD_S):
+    """Healthy readings every period up to ``end_s``, so the monitor is never blind."""
+    for index in range(round(start_s / PERIOD_S), round(end_s / PERIOD_S) + 1):
+        assert monitor.on_sample(sample(index * PERIOD_S)) is None
+
+
 def test_device_faults_and_duration():
     monitor = started_monitor()
+    readings_until(monitor, 0.5)
     assert monitor.on_faults(0.5, ()) is None
     violation = monitor.on_faults(0.5, (Fault("overheat", "too hot"),))
     assert violation.kind == checks.DEVICE_FAULT and "overheat" in violation.message
+    readings_until(monitor, 30.0, start_s=0.5 + PERIOD_S)
     assert monitor.check_time(30.0) is None
     assert monitor.check_time(30.01).kind == checks.DURATION
 
@@ -207,3 +215,58 @@ def test_commands_outside_the_band_are_not_allowed_out():
     assert monitor.check_command(0.0, high_rad + 0.1 * DEG).kind == checks.COMMAND_OUT_OF_RANGE
     assert monitor.check_command(0.0, low_rad - 0.1 * DEG).kind == checks.COMMAND_OUT_OF_RANGE
     assert monitor.check_command(0.0, math.nan).kind == checks.COMMAND_OUT_OF_RANGE
+
+
+# == Regressions from the outside review, 2026-11-16 ==================================
+
+
+def test_a_fault_poll_does_not_reset_the_count_of_missed_reads():
+    monitor = started_monitor()
+    for t_s in (0.01, 0.02, 0.03):
+        assert monitor.on_missed(t_s, "NoReply") is None
+    assert monitor.on_faults(0.035, ()) is None  # answered, but it is not a reading
+    violation = monitor.on_missed(0.04, "NoReply")
+    assert violation is not None and violation.kind == checks.MISSED_REPLIES
+
+
+def test_a_good_reading_does_not_reset_the_count_of_missed_fault_polls():
+    monitor = started_monitor()
+    for poll in range(1, 4):
+        readings_until(monitor, poll * 0.5, start_s=(poll - 1) * 0.5 + PERIOD_S)
+        assert monitor.on_missed_poll(poll * 0.5, "NoReply") is None
+    readings_until(monitor, 2.0, start_s=1.5 + PERIOD_S)
+    violation = monitor.on_missed_poll(2.0, "NoReply")
+    assert violation.kind == checks.MISSED_REPLIES and "4 fault polls in a row" in violation.message
+
+
+def test_the_time_without_a_good_reading_is_bounded_whatever_a_failed_read_costs():
+    monitor = started_monitor()  # the last good reading at 0 s
+    gap_s = BENCH.runner.sample_gap_max_s
+    # One slow failed read, then an answered fault poll: neither is a reading.
+    assert monitor.on_missed(0.6 * gap_s, "NoReply") is None
+    assert monitor.on_faults(0.8 * gap_s, ()) is None
+    assert monitor.check_time(gap_s) is None
+    violation = monitor.check_time(gap_s + 0.001)
+    assert violation.kind == checks.SAMPLE_GAP
+    assert violation.value == pytest.approx(gap_s + 0.001) and violation.limit == gap_s
+    # A slow missed read on its own trips it too, with one miss, far below the count.
+    monitor = started_monitor()
+    assert monitor.on_missed(gap_s + 0.001, "NoReply").kind == checks.SAMPLE_GAP
+    # And a good reading that ends a gap that was already too long.
+    monitor = started_monitor()
+    assert monitor.on_sample(sample(gap_s + 0.001)).kind == checks.SAMPLE_GAP
+
+
+def test_before_enable_only_the_count_of_missed_replies_applies():
+    monitor = Monitor(BENCH.limits, BENCH.runner)  # a preflight: nothing enabled
+    assert monitor.on_missed(10.0, "NoReply") is None
+    assert monitor.check_time(20.0) is None
+
+
+def test_a_plan_that_ends_without_a_reading_after_enable_was_not_watched():
+    monitor = started_monitor()
+    assert monitor.on_missed(0.02, "NoReply") is None
+    assert monitor.check_end(0.05).kind == checks.SAMPLE_GAP
+    monitor = started_monitor()
+    assert monitor.on_sample(sample(0.01)) is None
+    assert monitor.check_end(0.05) is None

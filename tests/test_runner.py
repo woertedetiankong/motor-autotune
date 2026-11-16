@@ -682,3 +682,141 @@ def test_only_the_runner_enables_or_commands_an_adapter():
         and len(node.args) == {"enable": 0, "command": 2}[node.func.attr]
     }
     assert found == {"enable", "command"}
+
+
+# == Regressions from the outside review, 2026-11-16 ==================================
+#
+# Bug 1: the monitor went blind and the run still completed. Bug 3: segments
+# shorter than the loop's period were skipped and the run still completed.
+
+
+class _BlindAfterEnable(Spy):
+    """After enable every read fails, each after ``timeout_s``; fault polls still answer."""
+
+    def __init__(self, timeout_s, **config):
+        super().__init__(**config)
+        self.timeout_s = timeout_s
+        self.blind = False
+
+    def enable(self):
+        super().enable()
+        self.blind = True
+
+    def read(self, signals=None):
+        if self.blind:
+            self.calls.append("read")
+            self.clock.wait_s(self.timeout_s)  # the read times out
+            raise NoReply("no reply to read")
+        return super().read(signals)
+
+
+@pytest.mark.parametrize("timeout_s", [0.02, 0.1, 0.2, 0.3])
+def test_reads_lost_after_enable_stop_the_run_however_long_a_failed_read_takes(timeout_s):
+    servo = _BlindAfterEnable(timeout_s)
+    result = run(servo, Hold(0.0, 5.0))
+    assert result.outcome is Outcome.ABORTED, result.summary
+    assert result.stop.kind in ("missed_replies", "sample_gap")
+    assert result.trace.t_end_s - result.trace.t_start_s < 1.0  # not the 5 s plan
+    assert_ends_safe(servo, result)
+
+
+def test_a_run_with_no_good_reading_after_enable_is_never_completed():
+    # Shorter than missed_replies_max failed reads take: the count alone never trips.
+    servo = _BlindAfterEnable(0.02)
+    result = run(servo, Hold(0.0, 0.06))
+    assert result.outcome is not Outcome.COMPLETED, result.summary
+    assert result.stop.kind == "sample_gap"
+    assert_ends_safe(servo, result)
+
+
+def test_a_stalled_read_that_then_answers_still_stops_the_run():
+    started = {}
+
+    def stall(servo, n):
+        if "enable" in servo.calls and not started:
+            started["t"] = servo.clock.now_s()
+        if started and servo.clock.now_s() > started["t"] + 1.0 and "stalled" not in started:
+            started["stalled"] = True
+            servo.clock.wait_s(0.5)  # half a second without a reading, then a good one
+
+    servo = Spy(hooks={"read": stall})
+    result = run(servo, Hold(0.0, 5.0))
+    assert result.outcome is Outcome.ABORTED, result.summary
+    assert result.stop.kind == "sample_gap"
+    assert_ends_safe(servo, result)
+
+
+def test_fault_polls_that_keep_failing_stop_the_run_even_while_reads_succeed():
+    def no_answer_once_enabled(servo, n):
+        if "enable" in servo.calls:
+            raise NoReply("no reply to the fault poll")
+
+    servo = Spy(hooks={"read_faults": no_answer_once_enabled})
+    result = run(servo, Hold(0.0, 5.0))
+    assert result.outcome is Outcome.ABORTED, result.summary
+    assert result.stop.kind == checks.MISSED_REPLIES
+    assert "fault poll" in result.stop.message
+    assert_ends_safe(servo, result)
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [
+        Step(0.0, (10 * DEG, -10 * DEG), dwell_s=0.2, settle_s=0.2, sample_rate_hz=1.0),
+        Hold(0.0, 0.02, sample_rate_hz=1.0),
+        Hold(0.0, 0.02),  # 4 periods at the simulated servo's 200 Hz
+    ],
+)
+def test_segments_too_short_for_the_sampling_period_are_refused_before_contact(spec):
+    servo = Spy()
+    result = run(servo, spec)
+    assert result.outcome is Outcome.REFUSED, result.summary
+    assert result.stop.kind == runner.SPEC_INVALID and result.stop.stage == runner.VALIDATE
+    assert "sampling period" in result.stop.message
+    assert servo.calls == []
+
+
+def test_a_stall_that_carries_the_run_past_a_whole_segment_is_not_completed():
+    started = {}
+
+    def stall(servo, n):
+        if "enable" in servo.calls and not started:
+            started["t"] = servo.clock.now_s()
+        # Near the end of the 0.5 s settle, one read takes 0.15 s, which is
+        # less than sample_gap_max but more than the 0.1 s step after it.
+        if started and servo.clock.now_s() > started["t"] + 0.48 and "stalled" not in started:
+            started["stalled"] = True
+            servo.clock.wait_s(0.15)
+
+    servo = Spy(noise=False, hooks={"read": stall})
+    result = run(servo, Step(0.0, (10 * DEG,), dwell_s=0.1, settle_s=0.5))
+    assert result.outcome is Outcome.ABORTED, result.summary
+    assert result.stop.kind == "behind_schedule"
+    assert "step 1: 0 deg to 10 deg" in result.stop.message
+    assert 10 * DEG not in [command.value for command in result.trace.commands]
+    assert_ends_safe(servo, result)
+
+
+def test_a_run_carried_materially_past_the_end_of_its_plan_is_not_completed():
+    started = {}
+
+    def late_read(servo, n):
+        if "enable" in servo.calls and not started:
+            started["t"] = servo.clock.now_s()
+        if started and servo.clock.now_s() > started["t"] + 0.99 and "read" not in started:
+            started["read"] = True
+            servo.clock.wait_s(0.15)
+
+    def late_poll(servo, n):
+        if started.get("read") and "poll" not in started:
+            started["poll"] = True
+            servo.clock.wait_s(0.15)
+
+    # Each stall is shorter than sample_gap_max, but together they keep the
+    # actuator enabled 0.3 s past the end of a 1 s plan.
+    servo = Spy(noise=False, hooks={"read": late_read, "read_faults": late_poll})
+    result = run(servo, Hold(0.0, 1.0))
+    assert result.outcome is Outcome.ABORTED, result.summary
+    assert result.stop.kind == "behind_schedule"
+    assert "longer than planned" in result.stop.message
+    assert_ends_safe(servo, result)

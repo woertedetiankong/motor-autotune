@@ -100,12 +100,13 @@ from servobench.commands import (
     FAIL,
     PARTIAL,
     PASS,
-    SAFE_STATE_NOT_CONFIRMED,
     CommandResult,
     ExitCode,
     RunJudgement,
     error_details,
     judge_run,
+    keep_safe_state_report,
+    record_not_written,
 )
 from servobench.contract import (
     POSITION,
@@ -119,7 +120,13 @@ from servobench.contract import (
     Sample,
     Support,
 )
-from servobench.experiments.runner import Outcome, RunResult, note_previous_run, run_experiment
+from servobench.experiments.runner import (
+    RunResult,
+    SafeStateWatch,
+    note_previous_run,
+    run_experiment,
+    watch_safe_state,
+)
 from servobench.experiments.spec import Step, command_band_rad
 from servobench.limits import WAIT, Bench
 from servobench.units import Dimension, format_quantity
@@ -227,36 +234,38 @@ def run_check(
     included; only an unknown adapter name is raised (``UnknownAdapter``), as a
     usage error with nothing contacted and nothing to record.
     """
-    check = _Check(bench, motion, Path(runs_dir))
-    opened = adapter is None
-    try:
-        if adapter is None:
-            try:
-                adapter = open_adapter(bench)
-            except AdapterError as error:
-                check.no_response(f"the actuator could not be reached: {_error(error)}")
-                return check.finish()
+    with watch_safe_state() as watch:
+        check = _Check(bench, motion, Path(runs_dir), watch)
+        opened = adapter is None
         try:
-            check.read_only(adapter)
-            if not motion:
-                check.skip_motion()
-            elif check.may_move():
-                check.move(adapter)
-        finally:
-            if opened:
-                adapter.close()  # releases the connection; does not change the actuator
-        return check.finish()
-    except UnknownAdapter:
-        raise
-    except Exception as error:  # noqa: BLE001 - reported in full in the result
-        return check.finish(error)
+            if adapter is None:
+                try:
+                    adapter = open_adapter(bench)
+                except AdapterError as error:
+                    check.no_response(f"the actuator could not be reached: {_error(error)}")
+                    return check.finish()
+            try:
+                check.read_only(adapter)
+                if not motion:
+                    check.skip_motion()
+                elif check.may_move():
+                    check.move(adapter)
+            finally:
+                if opened:
+                    adapter.close()  # releases the connection; does not change the actuator
+            return check.finish()
+        except UnknownAdapter:
+            raise
+        except Exception as error:  # noqa: BLE001 - reported in full in the result
+            return keep_safe_state_report(check.finish(error), watch)
 
 
 class _Check:
-    def __init__(self, bench: Bench, motion: bool, runs_dir: Path) -> None:
+    def __init__(self, bench: Bench, motion: bool, runs_dir: Path, watch: SafeStateWatch) -> None:
         self.bench = bench
         self.motion = motion
         self.runs_dir = runs_dir
+        self.watch = watch  # every run whose safe state was not confirmed
         self.items: dict[str, Item] = {}
         self.description: Description | None = None
         self.readings: list[Sample] = []
@@ -964,10 +973,7 @@ class _Check:
                 "This is a fault in servobench, not a finding about the actuator. Tell the human"
                 f" and give them the traceback under error. {state}"
             )
-            if result is not None and result.outcome is Outcome.SAFE_STATE_NOT_CONFIRMED:
-                verdict = SAFE_STATE_NOT_CONFIRMED
-                summary = f"{result.summary} Then check failed: {type(error).__name__}: {error}."
-                next_ = f"{judgement.next} {next_}"
+            # A safe state that was not confirmed overrides this: keep_safe_state_report below.
         elif judgement is not None:
             verdict, exit_code = judgement.verdict, judgement.exit_code
             needs_human, next_ = judgement.needs_human, judgement.next
@@ -1017,6 +1023,8 @@ class _Check:
             metrics=metrics,
             error=None if error is None else error_details(error),
         )
+        # Before the record, so that the record says the same.
+        keep_safe_state_report(command_result, self.watch)
         self.write_record(command_result)
         return command_result
 
@@ -1094,22 +1102,16 @@ class _Check:
                     notes=self.notes,
                     runs_dir=self.runs_dir,
                 )
+            info = json.loads((path / records.RUN_FILE).read_text(encoding="utf-8"))
         except Exception as error:  # noqa: BLE001 - the result says so
-            command_result.summary += (
-                f" The run record could not be written: {type(error).__name__}: {error}."
+            record_not_written(
+                command_result,
+                error,
+                "The run record",
+                "Tell the human that no record was kept: without it the next run cannot know"
+                " when this one ended, for the cool-down.",
             )
-            if command_result.verdict != SAFE_STATE_NOT_CONFIRMED:
-                command_result.verdict = ERROR
-                command_result.exit_code = ExitCode.DEVICE
-            command_result.needs_human = True
-            command_result.next = (
-                f"{command_result.next or ''} Tell the human that no record was kept: without it"
-                " the next run cannot know when this one ended, for the cool-down."
-            ).strip()
-            if command_result.error is None:
-                command_result.error = error_details(error)
             return
-        info = json.loads((path / records.RUN_FILE).read_text(encoding="utf-8"))
         command_result.run_dir = str(path)
         command_result.files = {str(path / records.RUN_FILE): "the run record (run.json)"}
         command_result.files.update(

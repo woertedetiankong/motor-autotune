@@ -59,6 +59,7 @@ def test_template_loads_with_si_values():
         approach_speed_rad_s=pytest.approx(math.radians(20.0)),
         when_too_warm="wait",
         cool_wait_max_s=600.0,
+        sample_gap_max_s=pytest.approx(0.2),
     )
     assert bench.check == CheckSettings(
         move_rad=pytest.approx(math.radians(2.5)),
@@ -221,6 +222,9 @@ def test_missing_runner_quantity_rejected_naming_it(key):
         ("when_too_warm", 'when_too_warm = "ignore"', 'must be "wait" or "refuse"'),
         ("approach_speed", "approach_speed = 20", "approach_speed: 20 is a bare number"),
         ("cool_wait_max", 'cool_wait_max = "10 deg"', "expected a time"),
+        ("sample_gap_max", 'sample_gap_max = "0 ms"', "sample_gap_max must be greater than zero"),
+        ("sample_gap_max", 'sample_gap_max = "200 deg"', "expected a time"),
+        ("sample_gap_max", "sample_gap_max = 0.2", "sample_gap_max: 0.2 is a bare number"),
     ],
 )
 def test_bad_runner_settings_rejected(key, line, expected):

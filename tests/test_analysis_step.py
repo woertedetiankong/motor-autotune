@@ -232,7 +232,9 @@ def test_a_step_that_has_not_settled_by_the_end_of_its_dwell_is_not_measured():
 
 
 def test_a_dwell_too_short_to_hold_readings_is_not_measured():
-    spec = Step(0.0, (10 * DEG,), dwell_s=0.02, settle_s=0.5)
+    # Long enough for the runner (10 periods at 200 Hz is 0.05 s), too short
+    # for the analysis: its last 20 % holds about 2 readings, not 5.
+    spec = Step(0.0, (10 * DEG,), dwell_s=0.06, settle_s=0.5)
     step = analyse_step(completed(spec, **NOISELESS), spec).steps[0]
     assert step.final_position_rad is None
     assert "too few to fix the position" in step.reasons["final_position_rad"]

@@ -21,7 +21,8 @@ That is what the runner's rehearsal and safety monitor are for.
 
 The runner adds one segment in front of every spec: an ``approach`` ramp from
 wherever the actuator is to the spec's first position, at the bench file's
-``approach_speed`` (see ``build_plan``).
+``approach_speed``, or slower so that it lasts at least as long as the runner
+needs every segment to last (see ``build_plan``).
 """
 
 from __future__ import annotations
@@ -316,9 +317,18 @@ def spec_from_dict(data: dict[str, Any]) -> ExperimentSpec:
 
 
 def build_plan(
-    spec: ExperimentSpec, start_position_rad: float, approach_speed_rad_s: float
+    spec: ExperimentSpec,
+    start_position_rad: float,
+    approach_speed_rad_s: float,
+    *,
+    min_duration_s: float = 0.0,
 ) -> tuple[Segment, ...]:
-    """The spec's segments, with the approach ramp from ``start_position_rad`` in front."""
+    """The spec's segments, with the approach ramp from ``start_position_rad`` in front.
+
+    The ramp moves at ``approach_speed_rad_s``, or slower if that would make it
+    shorter than ``min_duration_s``: a ramp of a fraction of a degree would
+    otherwise last less than one sampling period, and be passed over.
+    """
     if not (math.isfinite(approach_speed_rad_s) and approach_speed_rad_s > 0):
         raise SpecError("approach_speed_rad_s must be above zero")
     segments = spec.segments()
@@ -328,7 +338,7 @@ def build_plan(
     approach = Segment(
         APPROACH,
         f"approach {_deg(start_position_rad)} to {_deg(spec.start_position_rad)}",
-        distance_rad / approach_speed_rad_s,
+        max(distance_rad / approach_speed_rad_s, min_duration_s),
         spec.start_position_rad,
         from_position_rad=start_position_rad,
     )

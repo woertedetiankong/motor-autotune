@@ -28,7 +28,19 @@ What it checks:
 
   Comparing with the range of recent commands, not the latest command, lets a
   servo lag behind a step or a sine without tripping the check.
-- More than ``missed_replies_max`` reads or fault polls in a row with no reply.
+- Missed replies, counted separately for reads and for fault polls: more than
+  ``missed_replies_max`` reads in a row with no reply, or more than that many
+  fault polls in a row. Only a good reading resets the count of reads, and
+  only an answered fault poll the count of polls, so neither can hide the
+  other.
+- Blindness, in time: once the actuator is enabled, no more than
+  ``sample_gap_max`` may pass without a good reading of every signal the
+  monitor needs, whatever the time was lost to (missed replies, slow replies,
+  a stalled call). A count of missed replies alone cannot bound this, because
+  it does not know what a failed read costs. It is checked whenever the runner
+  reports anything: a sample (the gap before it), a missed reply, a fault
+  poll, and the time at the top of every loop. And a plan that ends without a
+  single good reading after enable (``check_end``) has not been watched.
 - A fault reported by the device.
 - The experiment running longer than ``experiment_max``.
 - Before a command is sent, that it is finite and inside the command band (the
@@ -62,6 +74,7 @@ VOLTAGE_LIMIT = "voltage"
 NOT_FOLLOWING = "not_following"
 FROZEN_READING = "frozen_reading"
 MISSED_REPLIES = "missed_replies"
+SAMPLE_GAP = "sample_gap"
 DEVICE_FAULT = "device_fault"
 DURATION = "duration"
 BAD_READING = "bad_reading"
@@ -75,6 +88,7 @@ VIOLATION_KINDS = (
     NOT_FOLLOWING,
     FROZEN_READING,
     MISSED_REPLIES,
+    SAMPLE_GAP,
     DEVICE_FAULT,
     DURATION,
     BAD_READING,
@@ -111,7 +125,14 @@ class Monitor:
         self.settings = settings
         self._band_rad = command_band_rad(limits)
         self._start_s: float | None = None
-        self._missed = 0
+        # Missed replies in a row: reads (reset by a good reading) and fault
+        # polls (reset by an answered poll), kept apart so neither hides the other.
+        self._missed_reads = 0
+        self._missed_polls = 0
+        # When the last good reading was taken, and from when the actuator is
+        # enabled (hold); the time without a reading is bounded from then on.
+        self._last_good_s: float | None = None
+        self._enabled_s: float | None = None
         self._last_command_rad: float | None = None
         # (t_s, position_rad) of the commands still inside the follow window,
         # plus the one in effect when the window starts.
@@ -127,6 +148,7 @@ class Monitor:
 
     def hold(self, t_s: float, position_rad: float) -> None:
         """The actuator is about to be enabled, which makes it hold ``position_rad``."""
+        self._enabled_s = t_s
         self._commanded(t_s, position_rad)
 
     def start(self, t_s: float) -> None:
@@ -157,13 +179,18 @@ class Monitor:
         self._commanded(t_s, position_rad)
 
     def on_sample(self, sample: Sample) -> Violation | None:
-        self._missed = 0
+        """A reading arrived. Its signals are checked, and so is the time since the last one."""
+        self._missed_reads = 0
         t_s = sample.t_s
         values = sample.values
         for name in MONITORED_SIGNALS + ((VELOCITY,) if VELOCITY in values else ()):
             value = values.get(name)
             if value is None or not isinstance(value, float) or not math.isfinite(value):
                 return Violation(BAD_READING, f"{name} reading is {value!r}, not a number", t_s)
+        # A good reading ends a gap, but a gap that was already too long when
+        # it ended still broke the bound: the actuator went unwatched.
+        gap = self._check_duration(t_s) or self._check_gap(t_s, "before this reading")
+        self._last_good_s = t_s
         return (
             self._check_position(t_s, values[POSITION])
             or self._check_speed(t_s, values)
@@ -172,33 +199,55 @@ class Monitor:
             or self._check_voltage(t_s, values[VOLTAGE])
             or self._check_following(t_s, values[POSITION])
             or self._check_frozen(t_s, values[POSITION])
+            or gap
         )
 
     def on_missed(self, t_s: float, error: str) -> Violation | None:
-        """A read or fault poll got no usable reply."""
-        self._missed += 1
-        allowed = self.settings.missed_replies_max
-        if self._missed > allowed:
-            return Violation(
-                MISSED_REPLIES,
-                f"{self._missed} reads in a row got no reply (missed_replies_max {allowed});"
-                f" the last error: {error}",
-                t_s,
-                float(self._missed),
-                float(allowed),
-                "replies",
-            )
-        return None
+        """A read got no usable reply."""
+        self._missed_reads += 1
+        return self._check_missed(t_s, self._missed_reads, "reads", error) or self._check_gap(
+            t_s, f"{self._missed_reads} reads in a row got no reply; the last error: {error}"
+        )
+
+    def on_missed_poll(self, t_s: float, error: str) -> Violation | None:
+        """A fault poll got no usable reply. It does not count as, or reset, a missed read."""
+        self._missed_polls += 1
+        return self._check_missed(t_s, self._missed_polls, "fault polls", error) or self._check_gap(
+            t_s, f"a fault poll also got no reply ({error})"
+        )
 
     def on_faults(self, t_s: float, faults: Iterable[Fault]) -> Violation | None:
-        self._missed = 0
+        """A fault poll was answered. That is not a reading: it resets only the poll count."""
+        self._missed_polls = 0
         faults = tuple(faults)
-        if not faults:
-            return None
-        listed = "; ".join(f"{fault.code}: {fault.description}" for fault in faults)
-        return Violation(DEVICE_FAULT, f"the device reports a fault ({listed})", t_s)
+        if faults:
+            listed = "; ".join(f"{fault.code}: {fault.description}" for fault in faults)
+            return Violation(DEVICE_FAULT, f"the device reports a fault ({listed})", t_s)
+        return self._check_gap(t_s, "fault polls were answered, but they are not readings")
 
     def check_time(self, t_s: float) -> Violation | None:
+        """At ``t_s``: the experiment's duration, then the time since the last good reading."""
+        return self._check_duration(t_s) or self._check_gap(t_s, "")
+
+    def check_end(self, t_s: float) -> Violation | None:
+        """The plan has ended at ``t_s``; was there a good reading after enable?"""
+        start_s = self._start_s if self._start_s is not None else self._enabled_s
+        if start_s is None or (self._last_good_s is not None and self._last_good_s > start_s):
+            return None
+        return Violation(
+            SAMPLE_GAP,
+            f"the plan ended {_s(t_s - start_s)} after enable without a single good reading"
+            f" since ({self._missed_reads} reads in a row got no reply), so the safety monitor"
+            " never saw the actuator while it was enabled",
+            t_s,
+            t_s - start_s,
+            self.settings.sample_gap_max_s,
+            "s",
+        )
+
+    # -- the checks ------------------------------------------------------------------
+
+    def _check_duration(self, t_s: float) -> Violation | None:
         if self._start_s is None:
             return None
         elapsed_s = t_s - self._start_s
@@ -215,7 +264,39 @@ class Monitor:
             )
         return None
 
-    # -- the checks ------------------------------------------------------------------
+    def _check_missed(self, t_s: float, count: int, what: str, error: str) -> Violation | None:
+        allowed = self.settings.missed_replies_max
+        if count <= allowed:
+            return None
+        return Violation(
+            MISSED_REPLIES,
+            f"{count} {what} in a row got no reply (missed_replies_max {allowed});"
+            f" the last error: {error}",
+            t_s,
+            float(count),
+            float(allowed),
+            "replies",
+        )
+
+    def _check_gap(self, t_s: float, context: str) -> Violation | None:
+        """Whether the actuator has been enabled without a good reading for too long."""
+        if self._enabled_s is None:
+            return None  # not enabled yet: the missed-reply count alone applies
+        since_s = self._last_good_s if self._last_good_s is not None else self._enabled_s
+        gap_s = t_s - since_s
+        limit_s = self.settings.sample_gap_max_s
+        if gap_s <= limit_s:
+            return None
+        return Violation(
+            SAMPLE_GAP,
+            f"no good reading for {_s(gap_s)}, longer than sample_gap_max {_s(limit_s)}: the"
+            " safety monitor could not see the actuator"
+            + (f" ({context})" if context else ""),
+            t_s,
+            gap_s,
+            limit_s,
+            "s",
+        )
 
     def _check_position(self, t_s: float, position_rad: float) -> Violation | None:
         low_rad, high_rad = self.limits.position_min_rad, self.limits.position_max_rad

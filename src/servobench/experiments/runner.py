@@ -7,7 +7,10 @@ skips one.
 1. Validate, without contacting the actuator. The spec against the bench
    limits (``ExperimentSpec.check``), and against what the adapter describes:
    a complete description, the position command accepting the whole command
-   band, every signal the monitor needs, the sample rate. A problem refuses the
+   band, every signal the monitor needs, the sample rate. And the spec against
+   its own sampling period: every segment must last at least
+   ``SEGMENT_PERIODS_MIN`` periods, and ``sample_gap_max`` must hold at least
+   ``GAP_PERIODS_MIN`` of them (see those constants). A problem refuses the
    run.
 2. Preflight, reading only. The device's faults and one sample. The run is
    refused if the device reports a fault, a reading is outside the limits, the
@@ -29,7 +32,14 @@ skips one.
 5. Run. One more reading, then enable (which holds the present position), then
    the plan, with the safety monitor (``servobench.experiments.monitor``)
    checking every command before it is sent and every sample, missed reply and
-   fault poll after. The first violation stops the run.
+   fault poll after. The first violation stops the run. The runner also keeps
+   to the plan: the loop's period is a wish, not a promise (a read can take
+   most of a period, a missed one a whole timeout, a bus can stall), so it
+   stops the run (``BEHIND_SCHEDULE``) rather than pass over a segment whose
+   command was never sent, or leave the actuator enabled more than
+   ``sample_gap_max`` past the end of the plan. A run is ``COMPLETED`` only if
+   every segment's command was sent, it ended on time, and the monitor had a
+   good reading after enable.
 6. Safe state. From stage 2 on, every exit enters the safe state: completion,
    a refusal, a safety abort, an exception anywhere (adapter, monitor, the code
    between samples), Ctrl-C. A failed attempt is retried. If the device never
@@ -104,6 +114,23 @@ SAFE_STATE_ATTEMPTS = 5
 SAFE_STATE_RETRY_WAIT_S = 0.1
 # The rehearsal servo's random seed, so a rehearsal is repeatable.
 REHEARSAL_SEED = 0
+# Every segment of a plan lasts at least this many sampling periods, or the
+# spec is refused at validation (the approach the runner adds is slowed down
+# to last this long). One pass of the loop can take up to three bus
+# transactions (a command, a read, a fault poll), each up to one period at the
+# adapter's reliable rate, so a segment's command may go out up to three
+# periods after it starts. Ten periods leave room for that and for one missed
+# reply at a timeout of a few periods (four on the simulated servo), and give
+# the monitor several readings of the response to each command. It is a rule
+# for running the experiment, not for analysing it: the analyses have their
+# own minimums (a step's last 20 % must hold 5 readings, so 25 periods; a
+# sine needs 8 readings per cycle) and report a value they cannot measure as
+# not measured.
+SEGMENT_PERIODS_MIN = 10
+# sample_gap_max must hold at least this many sampling periods. A healthy loop
+# can already see readings up to three periods apart (a command, a read and a
+# fault poll in one pass); one more period leaves room for a jittery bus.
+GAP_PERIODS_MIN = 4
 
 # Stages, in order.
 VALIDATE = "validate"
@@ -123,6 +150,9 @@ REHEARSAL_FAILED = "rehearsal_failed"  # the rehearsal left the limits
 INTERRUPTED_KIND = "interrupted"  # Ctrl-C
 DEVICE_ERROR = "device_error"  # the adapter raised an error
 EXCEPTION = "exception"  # any other exception: a bug
+# The run fell behind its plan: a segment passed before its command could be
+# sent, or the actuator stayed enabled more than sample_gap_max past the end.
+BEHIND_SCHEDULE = "behind_schedule"
 
 
 class Outcome(Enum):
@@ -243,6 +273,63 @@ class RunResult:
         return _summary(self)
 
 
+@dataclass(frozen=True)
+class UnconfirmedSafeState:
+    """A run whose safe state the device never confirmed, as a ``SafeStateWatch`` saw it."""
+
+    adapter: str
+    device_id: str | None
+    safe_state: str  # the safe state, in the adapter's words
+    report: SafeStateReport
+
+
+class SafeStateWatch:
+    """Every run, inside a ``watch_safe_state`` block, whose safe state was not confirmed."""
+
+    def __init__(self) -> None:
+        self.unconfirmed: list[UnconfirmedSafeState] = []
+
+    @property
+    def all_confirmed(self) -> bool:
+        return not self.unconfirmed
+
+
+_watches: list[SafeStateWatch] = []
+
+
+@contextmanager
+def watch_safe_state() -> Iterator[SafeStateWatch]:
+    """Collect every run in this block whose safe state was not confirmed.
+
+    ``SAFE_STATE_NOT_CONFIRMED`` overrides every other outcome, so a command
+    that runs experiments must never lose it: not to a record that cannot be
+    written, an analysis that fails, or any exception after the run. The
+    runner tells every open watch as soon as the safe state has failed, before
+    ``run_experiment`` returns and before any of the caller's code runs, so a
+    command that wraps itself in a watch (``servobench.commands``) knows even
+    if it never saw the result. Watches nest; each sees every run inside it.
+    """
+    watch = SafeStateWatch()
+    _watches.append(watch)
+    try:
+        yield watch
+    finally:
+        _watches.remove(watch)
+
+
+def _tell_watches(safe: SafeStateReport, description: Description) -> None:
+    if safe.status is not SafeState.NOT_CONFIRMED:
+        return
+    seen = UnconfirmedSafeState(
+        description.identity.adapter,
+        description.identity.device_id,
+        description.safe_state,
+        safe,
+    )
+    for watch in _watches:
+        watch.unconfirmed.append(seen)
+
+
 def run_experiment(
     adapter: Adapter,
     bench: Bench,
@@ -280,6 +367,7 @@ def run_experiment(
         finally:
             # Nothing else may come first: whatever ended the run, the safe state.
             safe = _enter_safe_state(adapter)
+            _tell_watches(safe, run.description)
             try:
                 run.finish()
             except Exception as error:  # noqa: BLE001 - bookkeeping after the safe state
@@ -414,10 +502,63 @@ class _Run:
                 f"the spec asks for {self.spec.sample_rate_hz} Hz, above the adapter's"
                 f" reliable {description.max_sample_rate_hz} Hz"
             )
+        else:
+            problems += self.check_sampling()
         problems += [
             (ADAPTER_UNSUITABLE, f"adapter {description.identity.adapter!r}: {text}")
             for text in unsuitable
         ]
+        return problems
+
+    def check_sampling(self) -> list[tuple[str, str]]:
+        """The spec against its sampling period: can it be run, and watched, as specified?"""
+        spec, period_s = self.spec, self.period_s
+        rate_hz = 1.0 / period_s
+        max_hz = self.description.max_sample_rate_hz
+        chosen = spec.sample_rate_hz is not None
+        source = "the spec's sample_rate_hz" if chosen else "the adapter's reliable rate"
+        at = f"{_hz(rate_hz)}, {source}"
+        problems: list[tuple[str, str]] = []
+        gap_s = self.settings.sample_gap_max_s
+        if GAP_PERIODS_MIN * period_s > gap_s * (1 + 1e-9):
+            needed_hz = GAP_PERIODS_MIN / gap_s
+            remedy = (
+                f"set sample_rate_hz to at least {_hz(needed_hz)}"
+                if needed_hz <= max_hz
+                else f"the adapter cannot sample that fast (at most {_hz(max_hz)})"
+            )
+            problems.append(
+                (
+                    SPEC_INVALID if chosen else ADAPTER_UNSUITABLE,
+                    f"{spec.kind}: the sampling period is {_s(period_s)} (at {at}), so the"
+                    f" safety monitor would see the actuator fewer than {GAP_PERIODS_MIN} times"
+                    f" within sample_gap_max {_s(gap_s)}; {remedy}",
+                )
+            )
+        shortest: dict[str, Segment] = {}
+        for segment in spec.segments():
+            if segment.duration_s < SEGMENT_PERIODS_MIN * period_s * (1 - 1e-9):
+                known = shortest.get(segment.kind)
+                if known is None or segment.duration_s < known.duration_s:
+                    shortest[segment.kind] = segment
+        for kind, segment in shortest.items():
+            needed_s = SEGMENT_PERIODS_MIN * period_s
+            needed_hz = SEGMENT_PERIODS_MIN / segment.duration_s
+            if kind in _SEGMENT_FIELDS:
+                remedies = [f"make {_SEGMENT_FIELDS[kind]} at least {_s(needed_s)}"]
+            else:  # a sine: its length is cycles / frequency
+                remedies = [f"use more cycles or a lower frequency, to last {_s(needed_s)}"]
+            if needed_hz <= max_hz:
+                remedies.insert(0, f"set sample_rate_hz to at least {_hz(needed_hz)}")
+            problems.append(
+                (
+                    SPEC_INVALID,
+                    f"{spec.kind}: '{segment.label}' lasts {_s(segment.duration_s)}, shorter"
+                    f" than {SEGMENT_PERIODS_MIN} sampling periods, which is {_s(needed_s)} at"
+                    f" {at}; the runner could pass over it without sending its command."
+                    f" To run it, {' or '.join(remedies)}",
+                )
+            )
         return problems
 
     # Stages 2 to 5 ----------------------------------------------------------------
@@ -478,7 +619,12 @@ class _Run:
                 f" {_deg(band_low_rad)} to {_deg(band_high_rad)}. With the power off, move it"
                 " by hand into that range",
             )
-        plan = build_plan(self.spec, position_rad, self.settings.approach_speed_rad_s)
+        plan = build_plan(
+            self.spec,
+            position_rad,
+            self.settings.approach_speed_rad_s,
+            min_duration_s=SEGMENT_PERIODS_MIN * self.period_s,
+        )
         total_s = math.fsum(segment.duration_s for segment in plan)
         if total_s > limits.experiment_max_s:
             self.refuse(
@@ -788,6 +934,24 @@ def _execute(
         end_s = t_s
         next_poll_s = t0_s + FAULT_POLL_INTERVAL_S
         sent_segment = -1
+        # How far behind its plan the run may fall: a pass of the loop takes a
+        # few periods, a missed reply a timeout; a stall longer than the
+        # monitor may go blind is a fault, and so is a lateness that long.
+        late_max_s = monitor.settings.sample_gap_max_s
+
+        def behind(message: str, value_s: float, limit_s: float) -> None:
+            trace.stop = StopReason(
+                BEHIND_SCHEDULE,
+                RUN,
+                f"the run fell behind its plan: {message}. A call to the device, or the"
+                " computer, took longer than the plan allows; the run does not follow its plan",
+                now_s,
+                now_s - t0_s,
+                trace.segment_at(now_s),
+                value_s,
+                limit_s,
+                "s",
+            )
 
         while True:
             now_s = clock.now_s()
@@ -802,15 +966,45 @@ def _execute(
                 )
                 return
             # The duration first: a run that a stalled call carried past the
-            # end of its plan has still been enabled too long.
+            # end of its plan has still been enabled too long. Then the time
+            # since the last good reading.
             violation = monitor.check_time(now_s)
             if violation is not None:
                 trace.stopped(violation)
                 return
+
+            # Never trust time to have moved on by one period: the segment
+            # due now may not be the one after the last one sent.
+            index = len(plan) if now_s >= end_s else bisect.bisect_right(starts_s, now_s) - 1
+            if index > sent_segment + 1:
+                skipped = plan[sent_segment + 1 : index]
+                first = sent_segment + 1
+                more = f", nor those of {len(skipped) - 1} more" if len(skipped) > 1 else ""
+                behind(
+                    f"'{skipped[0].label}' was due {_s(starts_s[first] - t0_s)} into the"
+                    f" experiment and lasted {_s(skipped[0].duration_s)}, but the runner next"
+                    f" got to send a command {_s(now_s - t0_s)} in, after it had ended, so its"
+                    f" command was never sent{more}",
+                    now_s - starts_s[first],
+                    skipped[0].duration_s,
+                )
+                return
             if now_s >= end_s:
+                over_s = now_s - end_s
+                if over_s > late_max_s:
+                    behind(
+                        f"the plan ended {_s(end_s - t0_s)} into the experiment, but the"
+                        f" actuator was still enabled {_s(now_s - t0_s)} in, {_s(over_s)} longer"
+                        f" than planned (sample_gap_max {_s(late_max_s)} is allowed)",
+                        over_s,
+                        late_max_s,
+                    )
+                    return
+                violation = monitor.check_end(now_s)
+                if violation is not None:
+                    trace.stopped(violation)
                 return
 
-            index = bisect.bisect_right(starts_s, now_s) - 1
             while len(trace.segment_start_s) <= index:
                 trace.segment_start_s.append(starts_s[len(trace.segment_start_s)])
             segment = plan[index]
@@ -842,7 +1036,7 @@ def _execute(
                 try:
                     faults = adapter.read_faults()
                 except CommunicationError as error:
-                    if _missed(trace, monitor, clock, error, index):
+                    if _missed(trace, monitor, clock, error, index, poll=True):
                         return
                 else:
                     violation = monitor.on_faults(clock.now_s(), faults)
@@ -856,13 +1050,19 @@ def _execute(
 
 
 def _missed(
-    trace: _TraceBuilder, monitor: Monitor, clock: Clock, error: Exception, segment: int | None
+    trace: _TraceBuilder,
+    monitor: Monitor,
+    clock: Clock,
+    error: Exception,
+    segment: int | None,
+    *,
+    poll: bool = False,
 ) -> bool:
-    """Record a missed reply; whether it stops the run."""
+    """Record a missed reply to a read, or to a fault poll; whether it stops the run."""
     t_s = clock.now_s()
     text = f"{type(error).__name__}: {error}"
-    trace.missed.append(MissedRead(t_s, text, segment))
-    violation = monitor.on_missed(t_s, text)
+    trace.missed.append(MissedRead(t_s, ("fault poll: " if poll else "") + text, segment))
+    violation = monitor.on_missed_poll(t_s, text) if poll else monitor.on_missed(t_s, text)
     if violation is None:
         return False
     trace.stopped(violation, RUN if trace.t_start_s is not None else PREFLIGHT)
@@ -1006,3 +1206,11 @@ def _s(value_s: float) -> str:
 
 def _degc(value_degc: float) -> str:
     return format_quantity(value_degc, Dimension.TEMPERATURE, digits=4)
+
+
+def _hz(value_hz: float) -> str:
+    return format_quantity(value_hz, Dimension.FREQUENCY, "Hz", digits=4)
+
+
+# What to lengthen in a spec, by the kind of segment that is too short.
+_SEGMENT_FIELDS = {"settle": "settle_s", "hold": "duration_s", "step": "dwell_s"}
