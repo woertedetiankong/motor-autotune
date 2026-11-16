@@ -23,7 +23,7 @@ Steps 1 to 8 need no hardware. Step 9 needs a document from the owner. Steps 10 
 
 - [x] 1. Project skeleton
 - [x] 2. Units and bench limits
-- [ ] 3. Adapter contract, clocks and the simulated servo
+- [x] 3. Adapter contract, clocks and the simulated servo
 - [ ] 4. Experiment runner and safety monitor
 - [ ] 5. Run records and plots
 - [ ] 6. Analysis: step response and frequency response
@@ -417,7 +417,11 @@ Design choices in the servo stage that this depends on: the narrow adapter contr
 
 Add dated, one-line notes here when a step leaves something the next session must know.
 
+- 2026-11-16: On the default simulated servo, any step big enough to saturate the torque limit (above about 32 deg) peaks above 380 deg/s, past the template's 180 deg/s `speed_max`; a saturating experiment for step 8's torque-limit identification would be aborted by the safety monitor under the template's limits, so it needs a decision (a bench file with a higher speed limit for that test, or another experiment), not a loosened check.
+- 2026-11-16: `model.py` assumes the pendulum arm hangs straight down at position zero and is a point mass at its centre of mass (inertia m L^2). The bench rig must be mounted that way, or the bench file needs a hanging-angle setting, before step 11; raise it with the owner then.
+- 2026-11-16: The contract has no dimension for a raw, unscaled device value (a Feetech gain register or "load" percentage, if the register table gives no SI scaling). Add one to `units.Dimension` and `contract.UNIT_SUFFIXES` in step 9 rather than passing a bare number.
 - 2026-11-16: `limits.py` rejects unknown sections and keys so a typo in a limit cannot be silently ignored; a new bench-file setting (step 3's fault injection, step 4's starting temperature and missed-reply count) must be added to the field tables or `_SECTIONS` and to `TEMPLATE`. Temperatures are stored in degC (`_degc`), not kelvin.
 
+- 2026-11-16: Before any public push (step 15): the workshop transcript in `docs/reference/` is other people's talks and is in the git history from the first commit, and commits so far carry a neutral author identity because git has none configured. Raise both with the owner then.
 - 2026-11-16: The owner confirmed the name `servobench` and the Apache-2.0 licence. Step 1 does not need to ask again.
 - 2026-11-15: Plan written. No code exists yet. The development machine is macOS with Python 3.14, `uv` 0.11 and `git` installed. The project folder is not yet a git repository.

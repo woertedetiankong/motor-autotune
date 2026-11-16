@@ -64,12 +64,31 @@ class Load:
 
 
 @dataclass(frozen=True)
+class SimSettings:
+    """Settings for the simulated servo. None means the simulator's own default.
+
+    Fault injection is allowed only when the target is the simulated servo, so
+    a fault meant for testing can never end up in a real run's rehearsal.
+    """
+
+    faults: tuple[str, ...] = ()
+    seed: int | None = None
+    noise: bool | None = None
+    sample_rate_hz: float | None = None
+    jitter_s: float | None = None
+    supply_voltage_v: float | None = None
+    ambient_temperature_degc: float | None = None
+    initial_temperature_degc: float | None = None
+
+
+@dataclass(frozen=True)
 class Bench:
     target: Target
     limits: Limits
     load: Load | None
     fingerprint: str
     source: str
+    sim: SimSettings = SimSettings()
 
 
 # Each quantity field: key in bench.toml, attribute in the dataclass, dimension.
@@ -90,8 +109,30 @@ LOAD_FIELDS: tuple[tuple[str, str, Dimension], ...] = (
     ("length", "length_m", Dimension.LENGTH),
 )
 
+SIM_FIELDS: tuple[tuple[str, str, Dimension], ...] = (
+    ("sample_rate", "sample_rate_hz", Dimension.FREQUENCY),
+    ("jitter", "jitter_s", Dimension.TIME),
+    ("supply_voltage", "supply_voltage_v", Dimension.VOLTAGE),
+    ("ambient_temperature", "ambient_temperature_degc", Dimension.TEMPERATURE),
+    ("initial_temperature", "initial_temperature_degc", Dimension.TEMPERATURE),
+)
+
+# The faults the simulated servo can be told to have, and what each one does.
+# The simulator (servobench.adapters.sim) implements exactly these.
+SIM_FAULTS: dict[str, str] = {
+    "reversed_direction": "the servo turns the opposite way to the position it is commanded to",
+    "wrong_zero": "the servo's zero is 20 deg away from where the arm hangs at rest",
+    "overheating": "the servo heats far faster than normal whenever its torque is on",
+    "dropped_replies": "about one read in four gets no reply",
+    "stuck_position": "the position reading never changes, although the servo moves",
+    "runaway": "once enabled, the servo drives away at full torque and ignores position"
+    " commands; turning torque off still works",
+}
+
+SIM_ADAPTER = "sim"
 _TARGET_KEYS = ("adapter", "port", "id")
-_SECTIONS = ("target", "limits", "load")
+_SIM_KEYS = ("faults", "seed", "noise") + tuple(key for key, _, _ in SIM_FIELDS)
+_SECTIONS = ("target", "limits", "load", "sim")
 
 
 def fingerprint(data: bytes) -> str:
@@ -131,12 +172,20 @@ def parse_bench(data: bytes, source: str = BENCH_FILENAME) -> Bench:
     load_table = _section(document, "load", problems, required=False)
     load = _read_quantities(load_table, "load", LOAD_FIELDS, problems)
 
+    sim_table = _section(document, "sim", problems, required=False)
+    sim = _read_sim(sim_table, problems)
+    if sim_table and target is not None and target.adapter != SIM_ADAPTER:
+        problems.append(
+            f"[sim] settings apply only to the simulated servo, but [target] adapter is"
+            f' "{target.adapter}"; remove them, or set adapter = "{SIM_ADAPTER}"'
+        )
+
     if limits is not None:
         _check_limits(limits, problems)
     if load is not None:
         _check_positive(load, "load", ("mass", "length"), problems)
 
-    if problems or target is None or limits is None:
+    if problems or target is None or limits is None or sim is None:
         raise BenchFileError(source, problems)
     return Bench(
         target=target,
@@ -144,6 +193,7 @@ def parse_bench(data: bytes, source: str = BENCH_FILENAME) -> Bench:
         load=None if load is None else Load(**_by_attribute(load, LOAD_FIELDS)),
         fingerprint=fingerprint(data),
         source=source,
+        sim=sim,
     )
 
 
@@ -212,6 +262,68 @@ def _read_quantities(
         except UnitError as error:
             problems.append(f"[{section}] {error}")
     return values if len(values) == len(fields) else None
+
+
+def _read_sim(table: dict | None, problems: list[str]) -> SimSettings | None:
+    if table is None:
+        return SimSettings()
+    _check_unknown(table, "sim", _SIM_KEYS, problems)
+    ok = True
+    values: dict[str, object] = {}
+
+    faults = table.get("faults", [])
+    known = tuple(SIM_FAULTS)
+    if not isinstance(faults, list) or not all(isinstance(fault, str) for fault in faults):
+        problems.append(
+            f'[sim] faults must be a list of fault names such as ["wrong_zero"],'
+            f" got {faults!r}; known faults: {_names(known)}"
+        )
+        ok = False
+    else:
+        for fault in faults:
+            if fault not in SIM_FAULTS:
+                problems.append(f"[sim] unknown fault {fault!r}; known faults: {_names(known)}")
+                ok = False
+        if len(set(faults)) != len(faults):
+            problems.append("[sim] faults lists the same fault more than once")
+            ok = False
+        values["faults"] = tuple(faults)
+
+    seed = table.get("seed")
+    if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int) or seed < 0):
+        problems.append(f"[sim] seed must be a whole number of 0 or more, got {seed!r}")
+        ok = False
+    values["seed"] = seed
+
+    noise = table.get("noise")
+    if noise is not None and not isinstance(noise, bool):
+        problems.append(f"[sim] noise must be true or false, got {noise!r}")
+        ok = False
+    values["noise"] = noise
+
+    for key, attribute, dimension in SIM_FIELDS:
+        if key not in table:
+            values[attribute] = None
+            continue
+        try:
+            values[attribute] = parse(table[key], dimension, field=key)
+        except UnitError as error:
+            problems.append(f"[sim] {error}")
+            ok = False
+    for key, attribute, must_be_positive in (
+        ("sample_rate", "sample_rate_hz", True),
+        ("jitter", "jitter_s", False),
+        ("supply_voltage", "supply_voltage_v", True),
+    ):
+        value = values.get(attribute)
+        if isinstance(value, float):
+            if must_be_positive and value <= 0:
+                problems.append(f"[sim] {key} must be greater than zero")
+                ok = False
+            elif value < 0:
+                problems.append(f"[sim] {key} must not be negative")
+                ok = False
+    return SimSettings(**values) if ok else None
 
 
 def _check_unknown(table: dict, section: str, known: tuple[str, ...], problems: list[str]) -> None:
@@ -302,4 +414,30 @@ cooldown = "60 s"
 # Delete this section if nothing is attached.
 mass = "50 g"
 length = "100 mm"
+
+[sim]
+# Settings for the simulated servo, used only when adapter = "sim". Every
+# setting is optional; remove the "#" to change one from its default.
+#
+# Faults to inject, for testing the tool's safety behaviour. Any of:
+#   "reversed_direction"  the servo turns the opposite way to its commands
+#   "wrong_zero"          the servo's zero is 20 deg from where the arm hangs
+#   "overheating"         the servo heats far faster than normal when torque is on
+#   "dropped_replies"     about one read in four gets no reply
+#   "stuck_position"      the position reading never changes
+#   "runaway"             once enabled, it drives away and ignores commands
+# faults = ["wrong_zero"]
+#
+# Random seed. The same seed gives the same samples.
+# seed = 0
+# Measurement noise on every signal, true or false.
+# noise = true
+# Bus transactions per second, and the spread of the extra time each one takes.
+# sample_rate = "200 Hz"
+# jitter = "0.3 ms"
+# Supply voltage with no load, room temperature, and the servo's temperature
+# at the start (default: room temperature).
+# supply_voltage = "7.4 V"
+# ambient_temperature = "25 degC"
+# initial_temperature = "25 degC"
 """

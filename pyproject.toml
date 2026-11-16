@@ -29,6 +29,9 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = ["--strict-markers"]
+markers = [
+    "motion: the test enables, moves or writes to the actuator (deselect with -m 'not motion')",
+]
 
 [tool.ruff]
 line-length = 100

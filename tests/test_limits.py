@@ -11,6 +11,7 @@ from servobench.limits import (
     BenchFileError,
     Limits,
     Load,
+    SimSettings,
     Target,
     load_bench,
     parse_bench,
@@ -46,6 +47,7 @@ def test_template_loads_with_si_values():
         cooldown_s=60.0,
     )
     assert bench.load == Load(mass_kg=pytest.approx(0.05), length_m=pytest.approx(0.1))
+    assert bench.sim == SimSettings()
     assert bench.fingerprint == "sha256:" + hashlib.sha256(TEMPLATE.encode()).hexdigest()
 
 
@@ -190,3 +192,69 @@ def test_write_template_refuses_to_overwrite(tmp_path):
     with pytest.raises(FileExistsError):
         write_template(path)
     assert path.read_text(encoding="utf-8") == "# mine\n"
+
+
+# -- the [sim] section ---------------------------------------------------------
+
+
+def with_sim(*lines: str) -> str:
+    """The template with its [sim] section's settings replaced by ``lines``."""
+    return TEMPLATE[: TEMPLATE.index("[sim]")] + "[sim]\n" + "\n".join(lines) + "\n"
+
+
+def test_template_sim_section_is_all_defaults():
+    assert parse_bench(TEMPLATE.encode()).sim == SimSettings()
+
+
+def test_sim_settings_are_read_with_units():
+    text = with_sim(
+        'faults = ["wrong_zero", "dropped_replies"]',
+        "seed = 3",
+        "noise = false",
+        'sample_rate = "0.5 kHz"',
+        'jitter = "200 us"',
+        'supply_voltage = "7400 mV"',
+        'ambient_temperature = "30 degC"',
+        'initial_temperature = "45 degC"',
+    )
+    assert parse_bench(text.encode()).sim == SimSettings(
+        faults=("wrong_zero", "dropped_replies"),
+        seed=3,
+        noise=False,
+        sample_rate_hz=500.0,
+        jitter_s=pytest.approx(200e-6),
+        supply_voltage_v=pytest.approx(7.4),
+        ambient_temperature_degc=30.0,
+        initial_temperature_degc=45.0,
+    )
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        ("sample_rate = 200", "[sim] sample_rate: 200 is a bare number"),
+        ('sample_rate = "200 ms"', "expected a frequency"),
+        ('sample_rate = "0 Hz"', "[sim] sample_rate must be greater than zero"),
+        ('jitter = "-1 ms"', "[sim] jitter must not be negative"),
+        ('supply_voltage = "0 V"', "[sim] supply_voltage must be greater than zero"),
+        ("seed = -1", "[sim] seed must be a whole number"),
+        ("seed = 1.5", "[sim] seed must be a whole number"),
+        ('noise = "yes"', "[sim] noise must be true or false"),
+        ('faults = "wrong_zero"', "[sim] faults must be a list"),
+        ('faults = ["wrong_zero", "wrong_zero"]', "more than once"),
+        (
+            'faults = ["gremlins"]',
+            "[sim] unknown fault 'gremlins'; known faults: reversed_direction",
+        ),
+        ('fault = ["wrong_zero"]', "[sim] unknown key 'fault'"),
+    ],
+)
+def test_bad_sim_settings_rejected(line, expected):
+    assert expected in problems_for(with_sim(line))
+
+
+def test_sim_settings_refused_for_a_real_adapter():
+    real = edit(TEMPLATE, "adapter", 'adapter = "hd1910"')
+    assert parse_bench(real.encode()).sim == SimSettings()  # an empty [sim] is fine
+    text = edit(with_sim('faults = ["runaway"]'), "adapter", 'adapter = "hd1910"')
+    assert "[sim] settings apply only to the simulated servo" in problems_for(text)

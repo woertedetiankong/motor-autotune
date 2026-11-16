@@ -40,6 +40,9 @@ class Dimension(Enum):
     MASS = ("a mass", "kg", "50 g")
     LENGTH = ("a length", "m", "100 mm")
     TORQUE = ("a torque", "N m", "0.5 N m")
+    # Gains of a position controller that outputs torque.
+    ROTATIONAL_STIFFNESS = ("a rotational stiffness", "N m/rad", "1.5 N m/rad")
+    ROTATIONAL_DAMPING = ("a rotational damping", "N m s/rad", "0.05 N m s/rad")
 
     def __init__(self, description: str, si_unit: str, example: str) -> None:
         self.description = description
@@ -78,6 +81,8 @@ _UNITS: list[tuple[tuple[str, ...], Dimension, float]] = [
     (("mm",), _D.LENGTH, 1e-3),
     (("N m", "Nm"), _D.TORQUE, 1.0),
     (("mN m", "mNm"), _D.TORQUE, 1e-3),
+    (("N m/rad", "Nm/rad"), _D.ROTATIONAL_STIFFNESS, 1.0),
+    (("N m s/rad", "Nms/rad"), _D.ROTATIONAL_DAMPING, 1.0),
 ]
 
 
