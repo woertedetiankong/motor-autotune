@@ -22,7 +22,7 @@ Steps 1 to 8 need no hardware. Step 9 needs a document from the owner. Steps 10 
 ## Progress
 
 - [x] 1. Project skeleton
-- [ ] 2. Units and bench limits
+- [x] 2. Units and bench limits
 - [ ] 3. Adapter contract, clocks and the simulated servo
 - [ ] 4. Experiment runner and safety monitor
 - [ ] 5. Run records and plots
@@ -416,6 +416,8 @@ Design choices in the servo stage that this depends on: the narrow adapter contr
 ## Notes for the next session
 
 Add dated, one-line notes here when a step leaves something the next session must know.
+
+- 2026-11-16: `limits.py` rejects unknown sections and keys so a typo in a limit cannot be silently ignored; a new bench-file setting (step 3's fault injection, step 4's starting temperature and missed-reply count) must be added to the field tables or `_SECTIONS` and to `TEMPLATE`. Temperatures are stored in degC (`_degc`), not kelvin.
 
 - 2026-11-16: The owner confirmed the name `servobench` and the Apache-2.0 licence. Step 1 does not need to ask again.
 - 2026-11-15: Plan written. No code exists yet. The development machine is macOS with Python 3.14, `uv` 0.11 and `git` installed. The project folder is not yet a git repository.
