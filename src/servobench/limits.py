@@ -87,6 +87,21 @@ class RunnerSettings:
 
 
 @dataclass(frozen=True)
+class CheckSettings:
+    """How the check command judges the actuator, from the [check] section."""
+
+    # Size of check's small move in the positive direction.
+    move_rad: float
+    # How far from zero the actuator may read at rest. The model, and so the
+    # bench limits, assume the arm hangs straight down at position zero.
+    zero_tolerance_rad: float
+    # The most the temperature may rise during check's few seconds of small moves.
+    temperature_rise_max_degc: float
+    # The slowest reading rate that counts as sustaining what the other commands need.
+    sample_rate_min_hz: float
+
+
+@dataclass(frozen=True)
 class Load:
     """What is attached to the actuator's output. For the bench rig, the pendulum arm."""
 
@@ -117,6 +132,7 @@ class Bench:
     target: Target
     limits: Limits
     runner: RunnerSettings
+    check: CheckSettings
     load: Load | None
     fingerprint: str
     source: str
@@ -145,6 +161,14 @@ LIMIT_FIELDS: tuple[tuple[str, str, Dimension], ...] = (
 RUNNER_FIELDS: tuple[tuple[str, str, Dimension], ...] = (
     ("approach_speed", "approach_speed_rad_s", Dimension.ANGULAR_VELOCITY),
     ("cool_wait_max", "cool_wait_max_s", Dimension.TIME),
+)
+
+CHECK_FIELDS: tuple[tuple[str, str, Dimension], ...] = (
+    ("move", "move_rad", Dimension.ANGLE),
+    ("zero_tolerance", "zero_tolerance_rad", Dimension.ANGLE),
+    # A temperature difference: "3 degC" is a rise of three degrees.
+    ("temperature_rise_max", "temperature_rise_max_degc", Dimension.TEMPERATURE),
+    ("sample_rate_min", "sample_rate_min_hz", Dimension.FREQUENCY),
 )
 
 LOAD_FIELDS: tuple[tuple[str, str, Dimension], ...] = (
@@ -176,7 +200,7 @@ SIM_ADAPTER = "sim"
 _TARGET_KEYS = ("adapter", "port", "id")
 _SIM_KEYS = ("faults", "seed", "noise") + tuple(key for key, _, _ in SIM_FIELDS)
 _RUNNER_KEYS = ("missed_replies_max", "when_too_warm") + tuple(key for key, _, _ in RUNNER_FIELDS)
-_SECTIONS = ("target", "limits", "runner", "load", "sim")
+_SECTIONS = ("target", "limits", "runner", "check", "load", "sim")
 
 
 def fingerprint(data: bytes) -> str:
@@ -214,6 +238,8 @@ def parse_bench(data: bytes, source: str = BENCH_FILENAME) -> Bench:
     limits_table = _section(document, "limits", problems, required=True)
     limits = _read_quantities(limits_table, "limits", LIMIT_FIELDS, problems)
     runner = _read_runner(_section(document, "runner", problems, required=True), problems)
+    check_table = _section(document, "check", problems, required=True)
+    check = _read_quantities(check_table, "check", CHECK_FIELDS, problems)
     load_table = _section(document, "load", problems, required=False)
     load = _read_quantities(load_table, "load", LOAD_FIELDS, problems)
 
@@ -230,15 +256,25 @@ def parse_bench(data: bytes, source: str = BENCH_FILENAME) -> Bench:
     if limits is not None and runner is not None:
         if runner.approach_speed_rad_s > limits["speed_max"]:
             problems.append("[runner] approach_speed must not be above [limits] speed_max")
+    if check is not None:
+        _check_check(check, limits, problems)
     if load is not None:
         _check_positive(load, "load", ("mass", "length"), problems)
 
-    if problems or target is None or limits is None or runner is None or sim is None:
+    if (
+        problems
+        or target is None
+        or limits is None
+        or runner is None
+        or check is None
+        or sim is None
+    ):
         raise BenchFileError(source, problems)
     return Bench(
         target=target,
         limits=Limits(**_by_attribute(limits, LIMIT_FIELDS)),
         runner=runner,
+        check=CheckSettings(**_by_attribute(check, CHECK_FIELDS)),
         load=None if load is None else Load(**_by_attribute(load, LOAD_FIELDS)),
         fingerprint=fingerprint(data),
         source=source,
@@ -457,6 +493,22 @@ def _check_limits(limits: dict[str, float], problems: list[str]) -> None:
         )
 
 
+def _check_check(
+    check: dict[str, float], limits: dict[str, float] | None, problems: list[str]
+) -> None:
+    _check_positive(check, "check", tuple(key for key, _, _ in CHECK_FIELDS), problems)
+    # An actuator that turns the wrong way moves as far below the commanded
+    # range as it was asked to move above it. Keeping the move to half of
+    # follow_error_max leaves room for its overshoot, so the run completes and
+    # check names the reversed direction instead of the monitor aborting.
+    if limits is not None and check["move"] > 0.5 * limits["follow_error_max"]:
+        problems.append(
+            "[check] move must be at most half of [limits] follow_error_max, so that an"
+            " actuator turning the wrong way stays inside the follow check and check can name"
+            " the problem instead of stopping the run"
+        )
+
+
 def _check_positive(
     values: dict[str, float], section: str, keys: tuple[str, ...], problems: list[str]
 ) -> None:
@@ -553,6 +605,28 @@ approach_speed = "20 deg/s"
 # state, for at most cool_wait_max) or "refuse".
 when_too_warm = "wait"
 cool_wait_max = "10 min"
+
+[check]
+# How the check command judges the actuator.
+#
+# check moves the actuator by this much in the positive direction and back,
+# from where it is at rest, to see that a positive command increases the
+# position. At most half of follow_error_max, so that an actuator turning the
+# wrong way stays inside the follow check and check can say so.
+move = "2.5 deg"
+# At rest, with torque off, the actuator must read within this of zero. The
+# tool assumes the arm hangs straight down at position zero, and the travel
+# range above is measured from there. Friction can hold a pendulum arm a few
+# degrees from hanging when torque is off; set this to what your rig allows.
+zero_tolerance = "8 deg"
+# The most the temperature may rise during check's few seconds of small moves.
+# A healthy actuator barely warms in that time; set this to at least two of
+# the steps in which your actuator reports temperature.
+temperature_rise_max = "3 degC"
+# The slowest rate at which the actuator must answer back-to-back reads.
+# The analyses need at least 8 readings per cycle of a sine and several
+# readings across a step's rise; 100 Hz allows sines up to 12.5 Hz.
+sample_rate_min = "100 Hz"
 
 [load]
 # What is attached to the output. For the bench rig, the pendulum arm:

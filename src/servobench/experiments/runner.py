@@ -14,7 +14,8 @@ skips one.
    actuator is outside the command band, or the experiment with its approach
    ramp would last longer than ``experiment_max``.
 3. Thermal budget. If the run is due inside the cool-down after the previous
-   run on this adapter, or the actuator is above ``start_temperature_max``, the
+   run on this adapter (or a run in another process that the caller reported
+   with ``note_previous_run``), or the actuator is above ``start_temperature_max``, the
    runner puts it in its safe state and waits, or refuses, as the bench file's
    ``when_too_warm`` says. After waiting it repeats the preflight.
 4. Rehearsal. The same plan, approach included, runs on a simulated servo built
@@ -330,6 +331,27 @@ class _RunEnds:
 
 
 _last_run_end_s = _RunEnds()
+
+
+def note_previous_run(adapter: Adapter, ended_s_ago: float) -> None:
+    """Tell the runner that a run on this actuator ended ``ended_s_ago`` seconds ago.
+
+    For a run made by another process, which this process cannot remember: a
+    command that runs one experiment per invocation reads the previous run's
+    end from its record and passes it here, so the cool-down holds across
+    invocations. The time is converted to the adapter's clock as "now minus
+    ``ended_s_ago``". This can only lengthen the rest, never shorten it: an end
+    earlier than one already known is ignored, and a negative or non-finite
+    ``ended_s_ago`` (a record from the future, a clock that was changed) counts
+    as a run that has only just ended.
+    """
+    if not (isinstance(ended_s_ago, (int, float)) and math.isfinite(ended_s_ago)):
+        ended_s_ago = 0.0
+    end_s = adapter.clock.now_s() - max(0.0, float(ended_s_ago))
+    known_s = _last_run_end_s.get(adapter)
+    if known_s is None or end_s > known_s:
+        _last_run_end_s.set(adapter, end_s)
+
 
 T = TypeVar("T")
 

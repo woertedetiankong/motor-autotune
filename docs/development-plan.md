@@ -27,7 +27,7 @@ Steps 1 to 8 need no hardware. Step 9 needs a document from the owner. Steps 10 
 - [x] 4. Experiment runner and safety monitor
 - [x] 5. Run records and plots
 - [x] 6. Analysis: step response and frequency response
-- [ ] 7. Command line and `check`, on the simulated servo
+- [x] 7. Command line and `check`, on the simulated servo
 - [ ] 8. Model fit, `characterize` and simulator export, on the simulated servo
 - [ ] 9. Feetech protocol layer (needs the register table)
 - [ ] 10. HD1910 adapter, read-only, on the bench (needs hardware and the owner)
@@ -79,7 +79,7 @@ src/servobench/
   records.py          run directories
   plots.py
   export.py           parameters for a simulator
-  commands/           check, characterize, tune
+  commands/           check, runs, characterize, tune
   cli.py              thin layer over the library
 tests/
   conformance/        tests that every adapter must pass
@@ -124,16 +124,19 @@ Every command prints a verdict first. With `--json` it prints one JSON object:
 
 ```json
 {
-  "verdict": "pass | fail | aborted | error",
+  "verdict": "pass | partial | fail | refused | aborted | error | safe_state_not_confirmed",
   "summary": "one sentence",
+  "exit_code": 0,
+  "needs_human": false,
+  "next": "what to do about it, when there is something to do",
+  "command": "check",
   "metrics": {},
   "files": {},
-  "run_dir": "runs/...",
-  "next": "what to do about it, when there is something to do"
+  "run_dir": "runs/..."
 }
 ```
 
-Exit codes: 0 pass; 1 the measurement ran and the verdict is fail; 2 usage or bench-file error; 3 safety abort; 4 device or communication error.
+Exit codes: 0 pass; 1 the measurement ran and the verdict is fail; 2 usage or bench-file error; 3 safety abort; 4 device or communication error. Step 7 settled the verdicts (`partial` for a run in which nothing failed but something was not measured; `refused` when the actuator was never enabled; `safe_state_not_confirmed` on its own) and which outcome takes which code: see `servobench.commands` and `docs/agent-usage.md`.
 
 Every run writes a directory under `runs/` holding the run description, the samples, the metrics and a plot, all as plain files.
 
@@ -423,6 +426,11 @@ Design choices in the servo stage that this depends on: the narrow adapter contr
 ## Notes for the next session
 
 Add dated, one-line notes here when a step leaves something the next session must know.
+
+- 2026-11-16: For steps 10 and 11: `check`'s zero item assumes the actuator is at rest with torque off when check starts (a servo holding torque reads where it holds, not where the arm hangs); find out the HD1910's torque state at power-up, and whether its gearbox lets the 50 g arm fall to hanging at all, before trusting that item.
+- 2026-11-16: For step 10: `check`'s bus item (200 back-to-back reads, 99 % answered, `[check] sample_rate_min` 100 Hz) and `temperature_rise_max` 3 degC were chosen against the simulated servo; revisit both with the owner once the real servo's rate, jitter and temperature step are measured. The cool-down across invocations finds the previous run by adapter name and device id, so the real adapter must report a stable `device_id`.
+- 2026-11-16: The PRD says the tool "restricts what it will run" where a protection is missing; step 7 only reports it (`protections` is a warning, never a fail). What to restrict, for example longer experiments without `safe_state_on_comm_loss`, is a decision for the owner, not yet made.
+- 2026-11-16: For step 14: `check --no-motion` calls only `describe`, `read` and `read_faults` (a test checks this), never `run_experiment` or `enter_safe_state`, so it can be reused on the assembled robot; `check` with motion must not be.
 
 - 2026-11-16: Step 6's settling-time tolerance is open with the owner: at 4096 steps per turn the plan's 5 % (10 % with noise) is missed on an overdamped servo (5.6 %, 11.4 %), and on the default servo's 10 deg steps the analysis refuses many settling times as unresolvable (3 % overshoot against the 2 % band). The tests use the proposed tolerance, the larger of the plan's figure and the uncertainty the analysis reports.
 - 2026-11-16: For steps 8 and 13: with Coulomb friction the model's frequency response depends on amplitude (at 3 deg it differs from the linearisation by up to 0.7 dB and 3.8 deg, at 1 deg by 2 dB and 11 deg), so fit by replaying through `model.simulate`, not a linear transfer function; and `tune` on settling time needs steps of 14 deg (the template's largest) or a decision, because 10 deg steps sometimes get none (with noise, 17 of 180 steps of 10 and 14 deg; without, both 10 deg return steps).

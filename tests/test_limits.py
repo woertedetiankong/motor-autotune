@@ -5,11 +5,13 @@ import re
 import pytest
 
 from servobench.limits import (
+    CHECK_FIELDS,
     LIMIT_FIELDS,
     LOAD_FIELDS,
     RUNNER_FIELDS,
     TEMPLATE,
     BenchFileError,
+    CheckSettings,
     Limits,
     Load,
     RunnerSettings,
@@ -58,13 +60,19 @@ def test_template_loads_with_si_values():
         when_too_warm="wait",
         cool_wait_max_s=600.0,
     )
+    assert bench.check == CheckSettings(
+        move_rad=pytest.approx(math.radians(2.5)),
+        zero_tolerance_rad=pytest.approx(math.radians(8.0)),
+        temperature_rise_max_degc=3.0,
+        sample_rate_min_hz=100.0,
+    )
     assert bench.load == Load(mass_kg=pytest.approx(0.05), length_m=pytest.approx(0.1))
     assert bench.sim == SimSettings()
     assert bench.fingerprint == "sha256:" + hashlib.sha256(TEMPLATE.encode()).hexdigest()
 
 
 def test_template_sets_every_field():
-    keys = [key for key, _, _ in LIMIT_FIELDS + RUNNER_FIELDS + LOAD_FIELDS]
+    keys = [key for key, _, _ in LIMIT_FIELDS + RUNNER_FIELDS + CHECK_FIELDS + LOAD_FIELDS]
     for key in keys + ["missed_replies_max", "when_too_warm"]:
         assert re.search(rf"^{key} = ", TEMPLATE, flags=re.MULTILINE), key
 
@@ -98,6 +106,42 @@ def test_missing_limit_rejected_naming_it(key):
 def test_missing_load_field_rejected_naming_it(key):
     message = problems_for(edit(TEMPLATE, key, ""))
     assert f"[load] {key} is missing" in message
+
+
+@pytest.mark.parametrize("key", [key for key, _, _ in CHECK_FIELDS])
+def test_missing_check_setting_rejected_naming_it(key):
+    message = problems_for(edit(TEMPLATE, key, ""))
+    assert f"[check] {key} is missing" in message
+
+
+def test_check_section_is_required_and_checked_for_unknown_keys():
+    start, end = TEMPLATE.index("[check]"), TEMPLATE.index("[load]")
+    assert "section [check] is missing" in problems_for(TEMPLATE[:start] + TEMPLATE[end:])
+    text = TEMPLATE.replace("[check]\n", '[check]\nskip_direction = true\n')
+    assert "[check] unknown key 'skip_direction'" in problems_for(text)
+
+
+@pytest.mark.parametrize(
+    ("key", "line", "expected"),
+    [
+        ("move", 'move = "0 deg"', "[check] move must be greater than zero"),
+        ("move", "move = 2.5", "[check] move: 2.5 is a bare number"),
+        ("move", 'move = "3 deg"', "[check] move must be at most half of [limits] follow_error"),
+        ("zero_tolerance", 'zero_tolerance = "0 deg"', "zero_tolerance must be greater"),
+        ("zero_tolerance", 'zero_tolerance = "8 V"', "expected an angle"),
+        ("temperature_rise_max", 'temperature_rise_max = "-1 degC"', "must be greater"),
+        ("sample_rate_min", 'sample_rate_min = "10 ms"', "expected a frequency"),
+    ],
+)
+def test_bad_check_settings_rejected(key, line, expected):
+    assert expected in problems_for(edit(TEMPLATE, key, line))
+
+
+def test_check_move_follows_follow_error_max():
+    text = edit(TEMPLATE, "follow_error_max", 'follow_error_max = "8 deg"')
+    assert parse_bench(edit(text, "move", 'move = "4 deg"').encode()).check.move_rad == (
+        pytest.approx(math.radians(4.0))
+    )
 
 
 def test_missing_sections_rejected():

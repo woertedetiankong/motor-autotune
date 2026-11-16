@@ -157,7 +157,8 @@ def test_a_run_whose_safe_state_failed_says_so_in_its_record(tmp_path):
     path = write_run(result, command="check", runs_dir=tmp_path)
     info = json.loads((path / records.RUN_FILE).read_text(encoding="utf-8"))
     assert info["outcome"] == "safe_state_not_confirmed"
-    assert info["verdict"] == "error"
+    # Its own verdict, so that it cannot be read as an ordinary error.
+    assert info["verdict"] == "safe_state_not_confirmed"
     assert info["summary"].startswith("SAFE STATE NOT CONFIRMED")
     assert info["safe_state"]["status"] == "not_confirmed"
     assert load_run(path).safe_state.status is SafeState.NOT_CONFIRMED
@@ -226,3 +227,97 @@ def test_plotting_is_headless_and_never_imports_pyplot():
         " assert 'matplotlib.pyplot' not in sys.modules"
     )
     subprocess.run([sys.executable, "-c", code], check=True)
+
+
+# == Added for the command line (plan step 7) =======================================
+
+
+def test_the_command_summary_end_time_and_readings_are_kept(completed, tmp_path):
+    ended = datetime.datetime(2026, 11, 16, 9, 0, 0, tzinfo=datetime.UTC)
+    readings = list(completed.trace.samples[:3])
+    path = write_run(
+        completed,
+        command="check",
+        runs_dir=tmp_path,
+        summary="Pass: all items passed.",
+        ended_utc=ended,
+        readings=readings,
+    )
+    info = json.loads((path / records.RUN_FILE).read_text(encoding="utf-8"))
+    assert info["summary"] == "Pass: all items passed."
+    assert info["run_summary"] == completed.summary
+    assert info["ended_utc"] == "2026-11-16T09:00:00+00:00"
+    assert info["target"] == {"adapter": "sim", "device_id": "1"}
+    assert records.READINGS_FILE in info["files"]
+    assert load_run(path).readings == tuple(readings)
+
+
+def test_a_read_only_record_has_no_run_and_loads_back(tmp_path):
+    adapter = servo()
+    readings = [adapter.read() for _ in range(5)]
+    path = records.write_readonly_run(
+        command="check",
+        bench=BENCH,
+        description=adapter.describe(),
+        verdict="partial",
+        summary="Partial: read only.",
+        metrics={"items": {"zero": {"status": "pass"}}},
+        readings=readings,
+        faults=(),
+        notes=("a note",),
+        runs_dir=tmp_path,
+    )
+    assert path.name.endswith("-check-sim-1")
+    record = load_run(path)
+    assert record.verdict == "partial" and record.metrics["items"]["zero"]["status"] == "pass"
+    assert record.spec is None and record.outcome is None and record.safe_state is None
+    assert record.trace is None and record.rehearsal is None
+    assert record.readings == tuple(readings)
+    assert record.info["bench"]["fingerprint"] == BENCH.fingerprint
+    assert sorted(record.info["files"]) == [records.READINGS_FILE]
+    # Without a description (the actuator did not respond), the bench file names the target.
+    unreached = records.write_readonly_run(
+        command="check",
+        bench=BENCH,
+        description=None,
+        verdict="error",
+        summary="Error: no reply.",
+        runs_dir=tmp_path,
+    )
+    assert unreached.name.endswith("-check-sim") and load_run(unreached).info["files"] == {}
+
+
+def test_runs_are_listed_newest_first_and_a_broken_one_is_reported(
+    completed, tmp_path, monkeypatch
+):
+    times = iter(
+        datetime.datetime(2026, 11, 16, 9, minute, tzinfo=datetime.UTC) for minute in range(10)
+    )
+    monkeypatch.setattr(records, "utc_now", lambda: next(times))
+    older = write_run(completed, command="check", runs_dir=tmp_path)
+    newer = records.write_readonly_run(
+        command="check", bench=BENCH, description=None, verdict="error", summary="x",
+        runs_dir=tmp_path,
+    )  # fmt: skip
+    (tmp_path / "not-a-run").mkdir()
+    (tmp_path / "a-file.txt").write_text("")
+    runs, problems = records.list_runs(tmp_path)
+    assert [run.path for run in runs] == [newer, older]
+    assert runs[1].enabled and not runs[0].enabled
+    assert runs[1].target == "sim-1" and runs[1].outcome == "completed"
+    assert len(problems) == 1 and "not-a-run" in problems[0]
+    assert records.list_runs(tmp_path / "missing") == ([], [])
+
+
+def test_the_latest_enabled_run_of_one_actuator_is_found(completed, tmp_path, monkeypatch):
+    refused = run_experiment(servo(), BENCH, Hold(85 * DEG, 1.0))  # never enabled
+    assert refused.trace is None
+    early = datetime.datetime(2026, 11, 16, 9, 0, tzinfo=datetime.UTC)
+    late = datetime.datetime(2026, 11, 16, 9, 5, tzinfo=datetime.UTC)
+    enabled = write_run(completed, command="check", runs_dir=tmp_path, ended_utc=early)
+    write_run(refused, command="check", runs_dir=tmp_path, ended_utc=late)
+    found = records.latest_enabled_run("sim", "1", tmp_path)
+    assert found.path == enabled and found.ended_utc == early
+    assert records.latest_enabled_run("sim", "2", tmp_path) is None  # another actuator
+    assert records.latest_enabled_run("hd1910", "1", tmp_path) is None
+    assert records.latest_enabled_run("sim", "1", tmp_path / "none") is None

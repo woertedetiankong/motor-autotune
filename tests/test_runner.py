@@ -330,6 +330,35 @@ def test_the_cool_down_is_kept_per_adapter_object():
     assert run(Spy(), Hold(0.0, 1.0)).cooled_s == 0.0
 
 
+def test_a_run_reported_from_another_process_starts_the_cool_down():
+    servo = Spy()
+    runner.note_previous_run(servo, 15.0)  # a run on this actuator ended 15 s ago
+    result = run(servo, Hold(0.0, 1.0))
+    assert result.outcome is Outcome.COMPLETED
+    assert result.cooled_s == pytest.approx(45.0, abs=0.1)  # the rest of the 60 s cool-down
+
+    refused = run(Spy(), Hold(0.0, 1.0), bench(when_too_warm='"refuse"'))
+    assert refused.outcome is Outcome.COMPLETED  # a new adapter object has no record
+    servo = Spy()
+    runner.note_previous_run(servo, 15.0)
+    refused = run(servo, Hold(0.0, 1.0), bench(when_too_warm='"refuse"'))
+    assert refused.outcome is Outcome.REFUSED and refused.stop.kind == runner.COOLDOWN
+    # The preflight reads took a few milliseconds of the 45 s left.
+    assert re.search(r"Try again in 44\.9\d s", refused.stop.message), refused.stop.message
+
+
+def test_a_reported_run_can_only_lengthen_the_rest():
+    servo = Spy()
+    assert run(servo, Hold(0.0, 1.0)).outcome is Outcome.COMPLETED  # ended just now
+    runner.note_previous_run(servo, 3600.0)  # an older run does not shorten the rest
+    assert run(servo, Hold(0.0, 1.0)).cooled_s == pytest.approx(60.0, abs=0.1)
+
+    for odd in (-30.0, math.nan, math.inf):  # a record from the future, a broken clock
+        servo = Spy()
+        runner.note_previous_run(servo, odd)
+        assert run(servo, Hold(0.0, 1.0)).cooled_s == pytest.approx(60.0, abs=0.1), odd
+
+
 # == The safe state itself ======================================================
 
 
