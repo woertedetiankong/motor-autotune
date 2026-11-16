@@ -26,7 +26,7 @@ Steps 1 to 8 need no hardware. Step 9 needs a document from the owner. Steps 10 
 - [x] 3. Adapter contract, clocks and the simulated servo
 - [x] 4. Experiment runner and safety monitor
 - [x] 5. Run records and plots
-- [ ] 6. Analysis: step response and frequency response
+- [x] 6. Analysis: step response and frequency response
 - [ ] 7. Command line and `check`, on the simulated servo
 - [ ] 8. Model fit, `characterize` and simulator export, on the simulated servo
 - [ ] 9. Feetech protocol layer (needs the register table)
@@ -418,6 +418,9 @@ Design choices in the servo stage that this depends on: the narrow adapter contr
 
 Add dated, one-line notes here when a step leaves something the next session must know.
 
+- 2026-11-16: Step 6's settling-time tolerance is open with the owner: at 4096 steps per turn the plan's 5 % (10 % with noise) is missed on an overdamped servo (5.6 %, 11.4 %), and on the default servo's 10 deg steps the analysis refuses many settling times as unresolvable (3 % overshoot against the 2 % band). The tests use the proposed tolerance, the larger of the plan's figure and the uncertainty the analysis reports.
+- 2026-11-16: For steps 8 and 13: with Coulomb friction the model's frequency response depends on amplitude (at 3 deg it differs from the linearisation by up to 0.7 dB and 3.8 deg, at 1 deg by 2 dB and 11 deg), so fit by replaying through `model.simulate`, not a linear transfer function; and `tune` on settling time needs steps of 14 deg (the template's largest) or a decision, because 10 deg steps sometimes get none (with noise, 17 of 180 steps of 10 and 14 deg; without, both 10 deg return steps).
+- 2026-11-16: For step 7: the analysis warns on a reversed direction but does not judge the zero; a wrong zero shows only as `position_before_enable_rad` and a steady offset, so `check` must compare those with the bench's zero itself.
 - 2026-11-16: Two paths reach an actuator outside `run_experiment`, reported to the owner at step 4 and not yet decided: the conformance suite's `motion` tests command the adapter directly (step 11 runs them on the real servo), and `write_parameter` is not routed through the runner (step 13 writes gains; rehearse them by passing `rehearsal_params`, and settle with the owner how the write itself is guarded).
 - 2026-11-16: `run_experiment` enters the safe state (torque off) on every exit, refusals included, so it must never be used on the assembled Microduck; step 14 stays read-only and must not call it.
 - 2026-11-16: The time-based cool-down is remembered per adapter object in one process only (adapter clocks are not comparable across processes). A CLI that runs one experiment per invocation (step 7) gets only the `start_temperature_max` check unless it also reads the previous run record's end time.
