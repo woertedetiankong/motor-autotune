@@ -242,6 +242,12 @@ Every run writes a directory under `runs/` holding the run description, the samp
 
 If a tolerance here turns out to be unrealistic, report what you measured and propose a new one with the reason. Do not change it silently.
 
+Amended 2026-11-16 after step 6 was built and reviewed:
+- **Settling time** is within the larger of 5% (10% with noise and jitter) and the uncertainty the analysis itself reports. Measured worst case was 5.6% and 11.4% on an overdamped servo; with an unquantised reading the error was 0.00%, so the shortfall is the 4096-step reading (one step is 0.9% of a 10 deg step, against a 2% settling band), not the analysis.
+- **Steady-state error** is within half a reading step, or one reading step with noise.
+- **"The model's own frequency response"** means the nonlinear model's response at the experiment's amplitude. With Coulomb friction the small-signal linearisation differs by up to 0.7 dB and 4 deg at 3 deg amplitude.
+- An independent review check, with friction and load removed, matched the closed-form transfer function within 0.07 dB and 0.3 deg from 0.5 to 6 Hz.
+
 ### Step 7. Command line and `check`, on the simulated servo
 
 **Goal.** The first command a user or an agent can run end to end.
