@@ -1,0 +1,17 @@
+# Python artefacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# macOS
+.DS_Store
+
+# Run records belong to the user's experiments, not to this repository
+runs/

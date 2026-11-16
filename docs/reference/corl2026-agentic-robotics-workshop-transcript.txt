@@ -1,0 +1,3733 @@
+[0:00:01] And finally, the result is
+[0:00:04] if you ask VLM what's the
+[0:00:07] camera movement,
+[0:00:11] So
+[0:00:12] and another part is
+[0:00:14] for telling the left from right and from
+[0:00:17] from a video shot. Actually, there is
+[0:00:20] some
+[0:00:21] some very small details. For example, if
+[0:00:24] you want to tell pan from track.
+[0:00:27] So pan is you you kind of rotating your
+[0:00:29] camera like from right to left and the
+[0:00:32] track is that you move your camera from
+[0:00:35] right to right right to left. But if you
+[0:00:37] just see the shot, see see the video
+[0:00:39] itself, it's the it's very minor
+[0:00:42] difference. So the the main difference
+[0:00:44] appears in the background, not not in
+[0:00:46] the main object. So most of the VLM
+[0:00:49] cannot tell this. And another example is
+[0:00:51] this zooming and dollying. So the main
+[0:00:54] object
+[0:00:55] stays the same, but the
+[0:00:57] the the ratio of the background actually
+[0:00:59] changes a lot.
+[0:01:03] Yeah, so
+[0:01:04] so so the thing is
+[0:01:06] probably some of us or most of the
+[0:01:08] researchers thought
+[0:01:10] it could be a data scaling problem. So
+[0:01:13] so you you can just have more better
+[0:01:15] data to train existing VLM and then the
+[0:01:18] VLM can can be
+[0:01:20] a better one.
+[0:01:51] Second one the point flow which is the
+[0:01:55] on screen
+[0:01:56] foreground of the main object in the
+[0:01:58] video. And then we we the language
+[0:02:00] alignment that is to align this
+[0:02:02] geometric representation and also the
+[0:02:05] language
+[0:02:07] Yeah, so here here goes to the
+[0:02:11] the overview of
+[0:02:17] just like what what I said. So if you if
+[0:02:19] you want to tell left from right or in
+[0:02:22] general the special reasoning, actually
+[0:02:24] you you need to take into account two
+[0:02:26] parts. Now the off screen states like
+[0:02:28] the camera itself, which is not seen on
+[0:02:31] the
+[0:02:32] on the video itself. And another thing
+[0:02:34] is the flow states which which tracks
+[0:02:36] the all the objects or everything moving
+[0:02:39] in the in the video. So if we take into
+[0:02:42] account these both two parts and finally
+[0:02:45] add another alignment alignment term
+[0:02:47] which have this QA like
+[0:02:50] for example you can ask the binary
+[0:02:52] binary binary question or the multiple
+[0:02:55] choice question. And finally these
+[0:02:57] things would align the language model to
+[0:02:59] the camera and the flow tokens.
+[0:03:02] Yeah, and the another thing is how to
+[0:03:04] construct the data for this kind of
+[0:03:07] model structure.
+[0:03:09] So basically there's not not that many
+[0:03:11] data has everything we need. For
+[0:03:14] example, we we need the language QA
+[0:03:16] supervision. We need the camera labels
+[0:03:18] like like the camera trackings and we
+[0:03:20] also need the flow labels. So actually
+[0:03:23] there's no perfect open source data set
+[0:03:26] that provide everything. So so we find
+[0:03:28] different data sets. So so if the data
+[0:03:30] set itself
+[0:03:32] has good QA then we then we just perform
+[0:03:35] or we just perform the camera tracking
+[0:03:37] use using the
+[0:03:39] and perform the optical flow tracking
+[0:03:41] use
+[0:03:44] And there's other data sets that maybe
+[0:03:48] have the optical flow tracking but don't
+[0:03:51] have the camera camera labels and the
+[0:03:53] others maybe only have the camera labels
+[0:03:55] but not the flow labels. And
+[0:03:57] still there is another kind of data set
+[0:03:59] which only have the camera labels and
+[0:04:01] the flow labels, but not the language
+[0:04:04] part.
+[0:04:05] So actually we have some
+[0:04:07] some recipe here like
+[0:04:09] different percentage of different data
+[0:04:11] sets and finally combining those those
+[0:04:15] masked data sets we can
+[0:04:17] we can train the model. So surprisingly
+[0:04:19] this this model is trained on
+[0:04:23] a nine nine billion VLM models, but
+[0:04:27] finally it kind of on par with GPT-4 and
+[0:04:30] outperformed every
+[0:04:32] open source model including the Cosmos 3
+[0:04:36] including the the other the other camera
+[0:04:40] camera models
+[0:04:43] So so this is pretty interesting. So
+[0:04:47] so in our mind actually
+[0:04:49] this advantage kind of come come from
+[0:04:51] these different spatial representations
+[0:04:54] like this off-screen and on-screen
+[0:04:56] representations and this kind of change
+[0:04:59] the
+[0:05:00] the the structure or the or the main
+[0:05:02] distribution in current VLM models. And
+[0:05:06] you can see that in different in
+[0:05:08] different benchmark like this camera
+[0:05:10] benchmark camera bench and the short
+[0:05:12] bench
+[0:05:13] we are ahead of GPT-4 Astra and even
+[0:05:16] ahead of human we tested. And but in the
+[0:05:19] syntax bench we are
+[0:05:21] we are below this GPT Astra model. So
+[0:05:23] actually GPT Astra and Opaque 5.5 is
+[0:05:26] really great
+[0:05:28] multi-modal language model. So so it
+[0:05:31] shows
+[0:05:32] they must take
+[0:05:34] much much more data than us to train
+[0:05:37] this kind of spatial understanding.
+[0:05:40] Yeah and here shows also for for for
+[0:05:42] different categories of movement
+[0:05:45] which model is is better actually from
+[0:05:48] our model is turned from Prithvi 3.5 and
+[0:05:50] we we got the huge difference from the
+[0:05:56] And here shows an example. So this this
+[0:05:58] this is pretty hard. So basically when
+[0:06:00] we ask the this question to all the open
+[0:06:04] source model and also the
+[0:06:06] and finally no one can get it right. But
+[0:06:10] after training on her own model, we get
+[0:06:12] it right. So this should be
+[0:06:14] moved to light shot. But I think even
+[0:06:17] human can
+[0:06:19] can make a mistake because at the very
+[0:06:21] beginning it's like pulling out. But if
+[0:06:23] you think about it in
+[0:06:25] in in your spatial world, finally maybe
+[0:06:28] you can find that it's a move to left
+[0:06:30] shot.
+[0:06:33] Yeah, so basically another thing is
+[0:06:35] actually we have this
+[0:06:37] different like this on on screen or off
+[0:06:39] screen dynamics token to the to the
+[0:06:42] model. But
+[0:06:44] does it does it really use this token I
+[0:06:46] mean in in the spatial reasoning?
+[0:06:48] That's a very interesting question. So
+[0:06:50] so the thing is we we train with with
+[0:06:53] this
+[0:06:54] with with this different kind of
+[0:06:55] multi-modal tokens. So if you take out
+[0:06:57] these multi-modal tokens
+[0:07:00] take out from the training stage,
+[0:07:02] actually you cannot you can cannot get a
+[0:07:06] good a good spatial reasoning model. But
+[0:07:08] if you take it out in the inference
+[0:07:11] stage, like you don't need you don't see
+[0:07:14] the generated like the
+[0:07:16] on screen or off screen screen token,
+[0:07:18] only see the
+[0:07:19] the the QA answer. Actually
+[0:07:22] in the inference time it it don't need
+[0:07:25] it don't need this multi-modal token. So
+[0:07:27] that that's the interesting part. So so
+[0:07:28] finally it looks like
+[0:07:30] you train with multi-modal token but
+[0:07:32] finally it turns into the
+[0:07:35] LLM or into the LLM. So
+[0:07:38] so so in the inference time you you
+[0:07:40] don't need those multi-modal things it
+[0:07:42] become part of the LLM.
+[0:07:46] Yeah, so so even though this is a this
+[0:07:48] is a model we we we
+[0:07:50] we we thought it's a very good model and
+[0:07:52] actually we already applied this model
+[0:07:54] in captioning for
+[0:07:56] video generation pre-training and also
+[0:07:58] other
+[0:07:59] spatial understanding tasks.
+[0:08:01] But but but still so so there are some
+[0:08:04] limitations of this model. For example,
+[0:08:06] our current supervision is actually the
+[0:08:08] future model like VGT Omega the
+[0:08:09] co-tracker. So it must be some much
+[0:08:13] better to try tracking algorithm in I
+[0:08:15] think in the future. And another thing
+[0:08:17] is if you have these compound motions,
+[0:08:19] currently the model performs better in
+[0:08:22] in the
+[0:08:23] uh like very short short short
+[0:08:24] trajectory and in the in the single
+[0:08:26] motion detection.
+[0:08:28] Yeah, and currently it can it can only
+[0:08:30] take a one shot
+[0:08:34] It's
+[0:08:35] a short
+[0:08:36] short changing. You have to run it
+[0:08:38] twice.
+[0:08:40] And actually we we are also working on
+[0:08:42] uh there are other projects that trying
+[0:08:45] to apply this kind of structure. For
+[0:08:48] example, in this multi-modal token
+[0:08:49] supervision and then do the language QA
+[0:08:53] using the multi-modal token in different
+[0:08:55] in different tasks including generating
+[0:08:57] the layout of the scene or the the the
+[0:09:00] indoor scene and including
+[0:09:03] understanding the human pose and also
+[0:09:05] including understanding lines.
+[0:09:07] And and finally there there's one more
+[0:09:09] thing that I
+[0:09:14] So basically what we tried recently is
+[0:09:16] if we apply
+[0:09:18] directly into
+[0:09:21] generating task, for example, if we we
+[0:09:23] we want to generate like like
+[0:09:26] camera movement that looks like the
+[0:09:28] reference camera and apply it to another
+[0:09:32] original video. So you see that the
+[0:09:34] result is pretty interesting because the
+[0:09:36] reference camera is kind of
+[0:09:38] uh tracking
+[0:09:40] a tracking motion. And in the generated
+[0:09:43] video, yes, it it tracks the
+[0:09:45] the the main object but but the other
+[0:09:47] thing the the global movement is pretty
+[0:09:49] different.
+[0:09:51] So so we
+[0:09:52] I mean from from the point the point of
+[0:09:55] filmmaking actually it's a pretty good
+[0:09:57] result but probably in other special
+[0:09:59] reasoning task it's not. So so that that
+[0:10:02] that that's an interesting phenomenon
+[0:10:03] and I think
+[0:10:05] in the worst to have more discussion to
+[0:10:07] see if an understanding model itself is
+[0:10:09] already a challenge measure.
+[0:10:11] Uh yeah and finally I will I will show
+[0:10:14] what
+[0:10:15] I'm working on for the agent part. So
+[0:10:18] basically for
+[0:10:20] for making
+[0:10:21] we we still building an agent like like
+[0:10:23] a like an coding agent. So the coding
+[0:10:25] agent actually from taking a
+[0:10:28] like a sentence or like like some
+[0:10:31] language prompt and it will generate the
+[0:10:33] motions generate different
+[0:10:36] different objects and finally
+[0:10:39] render it into into a real video. So
+[0:10:42] currently the render is the renderer is
+[0:10:45] not 3D renderer but the video generation
+[0:10:47] model.
+[0:10:48] Uh yeah so so I think there there will
+[0:10:49] be three things
+[0:10:51] to kind of to take away or to discuss
+[0:10:54] after this. So the first thing is
+[0:10:57] so so to my understanding the word
+[0:10:58] itself the language itself is not native
+[0:11:01] special special interface but
+[0:11:04] yeah but but
+[0:11:05] I'm not sure if it's true.
+[0:11:07] And the second one is if if making the
+[0:11:11] state explicitly is better or not to
+[0:11:14] VLM or LLM. And the last one is what I
+[0:11:18] said before is an understanding model
+[0:11:20] naturally.
+[0:13:04] >> So
+[0:13:05] yes so so
+[0:13:09] is more important in training video
+[0:13:11] generation.
+[0:13:15] >> Thank you Ren. Any other questions from
+[0:13:16] the audience?
+[0:13:28] >> It seems that you're using it
+[0:13:32] the project and approaches for mostly
+[0:13:35] video manipulation or understanding. I'm
+[0:13:37] wondering if you had some chance to look
+[0:13:39] at or apply these things to robotics.
+[0:13:41] Like one thing which we face is that the
+[0:13:44] amount of accuracy which might need it
+[0:13:46] when we are dealing with robotic
+[0:13:48] manipulation is higher.
+[0:13:49] So
+[0:13:51] like I don't know if you did some
+[0:13:52] analysis on
+[0:13:55] the these models for video
+[0:13:57] understanding. Do they also have good
+[0:13:59] understanding on either uncertainty or
+[0:14:01] accuracy?
+[0:14:09] >> Yeah actually I have a slides that
+[0:14:12] showing the similar thing so
+[0:14:16] Yeah so
+[0:14:17] we we we have
+[0:14:19] we will try different things. So the
+[0:14:20] first thing is
+[0:14:22] because
+[0:14:23] so so the other part actually
+[0:14:26] we are comparing with other open source
+[0:14:29] and also the
+[0:14:30] and we also compared with some
+[0:14:35] for example this here this
+[0:14:38] like
+[0:14:39] HY and
+[0:14:42] and also
+[0:14:44] So so basically our finding is the
+[0:14:46] current like embodied VLM still suffers
+[0:14:50] the problem like discrete distinguishing
+[0:14:52] the left from right. So the basically so
+[0:14:55] so I think the reason is first because
+[0:14:58] there's maybe not enough data to train
+[0:15:00] this specific things into this kind of
+[0:15:04] And another thing is probably what we
+[0:15:06] proposed you need a new
+[0:15:09] you need a new structure for this. And
+[0:15:11] the second part is we we also try our
+[0:15:14] in embodied tasks like like
+[0:15:17] manipulation tasks because the the
+[0:15:19] internet working on this project is also
+[0:15:22] working on other robotics project.
+[0:15:24] So so basically the the result I I don't
+[0:15:26] have the result here but it
+[0:15:29] it looks very interesting. So for the
+[0:15:30] very simple
+[0:15:32] like like like if you only have maybe
+[0:15:34] one motion at a time
+[0:15:36] it performs pretty good at least on par
+[0:15:38] with
+[0:15:39] with the normal embodied models.
+[0:15:42] Yeah, but
+[0:15:43] regarding the planning it's still
+[0:15:47] it's not the
+[0:15:49] like like the main purpose of these
+[0:15:50] models. So so so I think it it's a kind
+[0:15:53] of baseline
+[0:15:55] the the VLM is also a baseline robotics
+[0:15:57] model but yeah but but not a kind of
+[0:16:00] high end model. And another thing is the
+[0:16:02] latency of of this current model is like
+[0:16:05] a second. So so I think it it cannot
+[0:16:07] directly apply to the real robotics
+[0:16:10] task.
+[0:16:13] >> Thank you. Let's give a big round of
+[0:16:14] applause to
+[0:16:18] In our next speaker is
+[0:16:21] from Carnegie Mellon University.
+[0:16:46] >> Okay.
+[0:16:49] Okay, let me share screens
+[0:16:52] Wait. Why it doesn't work?
+[0:16:55] Seems like
+[0:17:03] Maybe I have to use adapter.
+[0:17:05] >> Let's try
+[0:17:07] >> Okay, okay, okay.
+[0:17:17] All right, okay.
+[0:17:18] Okay, I see it, I see it.
+[0:17:22] Okay, it works now.
+[0:17:24] No, no, I need to Yeah, I need to
+[0:17:27] Okay.
+[0:17:30] Okay, let me share screens.
+[0:17:33] All right.
+[0:17:35] Hey everyone. Oh wow, a lot of people in
+[0:17:36] this workshop. Yeah, nice. Okay, hi
+[0:17:39] everyone. I'm from Carnegie Mellon. Also
+[0:17:41] I'm a I'm a scholar in the
+[0:17:43] Also today I'm going to talk about
+[0:17:46] and here is a a
+[0:17:49] from the
+[0:17:51] the first time I saw this I feel it's
+[0:17:52] pretty sci-fi
+[0:17:54] I just want to include here. Okay, let's
+[0:17:56] start from some motivations. Let's
+[0:17:58] actually start with a question. When is
+[0:18:02] right? The robot learning community has
+[0:18:04] been asking this question for years.
+[0:18:06] And on September 4, a regular day for
+[0:18:09] OpenAI, a regular day in the barrier,
+[0:18:12] GPT-6 was released. And 4 days later,
+[0:18:15] and someone on Twitter tried to use
+[0:18:17] to control a robot to paint this Golden
+[0:18:20] Gate Bridge on the canvas, right? And
+[0:18:22] the results are just amazing, right? It
+[0:18:24] was with a very cheap arm, SO11, and
+[0:18:28] with only five trials, it gave a really
+[0:18:30] good result. Maybe we can call this like
+[0:18:33] recursive self-entertainment, right? And
+[0:18:35] the robot like recursively, you know,
+[0:18:37] draw a pattern by the painting.
+[0:18:40] However, right? For robotics people, we
+[0:18:42] we have a very mixed feeling because as
+[0:18:44] Jim Jim Fan said on Monday, this
+[0:18:46] painting shattered many people's dreams.
+[0:18:48] So it feels like, you know, we're
+[0:18:50] waiting for a GPT moment for robotics,
+[0:18:52] like robotics moment for GPT arrived
+[0:18:55] first.
+[0:18:56] Right? Like think about this. It's like
+[0:18:58] like not really good for robotics
+[0:19:00] community in a way, right?
+[0:19:02] And another
+[0:19:04] thing I want to share is actually came
+[0:19:07] even a little bit before it.
+[0:19:10] I think in on March 7, 2026, you know,
+[0:19:13] Andrew D. Caparcy released this very
+[0:19:15] famous Auto Research repo. It's quite
+[0:19:17] amazing. Basically, he it was using
+[0:19:19] Claude code to
+[0:19:20] Nano Chat language model training. You
+[0:19:22] know, I'm a big fan of Nano Chat. One of
+[0:19:24] my hobbies training small language model
+[0:19:26] ourselves. And I know like how hard it
+[0:19:28] how hard it is to tune all this
+[0:19:30] architecture, loss function, infra. And
+[0:19:33] you can see like a Claude code at that
+[0:19:34] time, I believe it's Opos 4.6
+[0:19:37] can can like propose a lot of like
+[0:19:40] change to reduce the validation loss,
+[0:19:42] right? And the thing in this box are
+[0:19:45] sort of like code from Andrew G, a par
+[0:19:47] code, par sci-fi, and a pinch of
+[0:19:50] psychosis.
+[0:19:51] Yeah. All right. So then I asked myself,
+[0:19:54] hey hey Guanya, why is robotics policy
+[0:19:56] improvement fundamentally different from
+[0:19:59] Auto Research on Nano Chat?
+[0:20:01] So I want to try that, right? So in in a
+[0:20:03] weekend in April 2026, right after Opos
+[0:20:05] 4.7 was released, I tried Auto Research
+[0:20:08] in Push T simulation. And thanks Amazon
+[0:20:11] Fire to provide a lot of tokens. And
+[0:20:13] this is like a code as policy settings,
+[0:20:15] no neural network policy at all. It's
+[0:20:17] just literally a Claude code is going to
+[0:20:18] write a bunch of code to control to
+[0:20:20] solve this pushy task. Now pushy is
+[0:20:22] really hard, you know,
+[0:20:24] multi-modal
+[0:20:26] manipulation problem. And you can see
+[0:20:28] the hill climbing process. At the end,
+[0:20:30] it came up some really smart solution
+[0:20:32] involved, you know, CEM based planning
+[0:20:34] and some
+[0:20:36] smart control strategies and so on so
+[0:20:37] forth.
+[0:20:38] It's pretty pretty exciting. So so I
+[0:20:41] told my student, hey, why don't we try
+[0:20:44] this in in the real world?
+[0:20:46] Yeah, again, this is a way before before
+[0:20:48] Astro already around April 2026.
+[0:20:51] So and then we quickly
+[0:20:53] quickly realized there are in big
+[0:20:55] difference between, you know, agent in
+[0:20:58] the digital world and a running coding
+[0:20:59] agent to improve real world robotics.
+[0:21:01] And the difference is both Nano Chat and
+[0:21:03] Push D simulation, they're sandbox,
+[0:21:05] right? It's very easy to reset the
+[0:21:06] environment. It's very easy to get very
+[0:21:08] favorable reward signal, right? And in
+[0:21:10] real world,
+[0:21:12] however, is not a sandbox, right? And
+[0:21:14] how do we actually close the loop,
+[0:21:15] right? From diagnosis to implement new
+[0:21:18] ideas to do actually the experiment.
+[0:21:20] And there are different ways to do that.
+[0:21:22] So today I'm going to present two ways
+[0:21:25] to close the loop. One is like called
+[0:21:27] unpair. We can directly with a good
+[0:21:28] harness, we can directly, you know, do
+[0:21:30] this close the loop in the real world,
+[0:21:32] directly do experiment hill climbing in
+[0:21:33] the real world. Another work is called a
+[0:21:35] CMX. The idea is we can maybe simulation
+[0:21:37] pre-train the agent in simulation first,
+[0:21:40] then adapt in real world.
+[0:21:42] Okay, let's get started to the unpair
+[0:21:43] work.
+[0:21:45] All you need, basically we directly do
+[0:21:47] auto research in the real world. Let me
+[0:21:48] play the video for the final demo for
+[0:21:50] the
+[0:21:52] well and
+[0:21:53] explaining the the process. So it
+[0:21:55] doesn't it's not from scratch, right? We
+[0:21:56] did provide each coding agent, you know,
+[0:21:58] a 50 teleoperation demos to start with
+[0:22:01] and to start from a purely, you know,
+[0:22:03] empty code base, right? You can see in
+[0:22:05] the beginning the success rate is really
+[0:22:06] low, it's zero. I think first is that
+[0:22:09] try try to download some VLA, like a
+[0:22:11] pile of group zero shot, which didn't
+[0:22:14] work. And then like the agent try like a
+[0:22:16] pure BC, right? Have a pretty bad
+[0:22:18] performance. The agent realized, hey, I
+[0:22:20] need to do online RL. And then like the
+[0:22:23] agent figure out I need to add BC term
+[0:22:25] back to RL. And finally, like the
+[0:22:28] performance is almost saturated. There's
+[0:22:29] a lot of like local change. For example,
+[0:22:31] tweak the BC term weight, change the
+[0:22:33] batch size, you know, even change the
+[0:22:35] low level, you know, improve the low
+[0:22:37] level impedance controller, stuff like
+[0:22:39] that. Yeah.
+[0:22:40] Again, like
+[0:22:41] finally, you know, it can successfully
+[0:22:43] pick up all these pins around six pins
+[0:22:45] on the table to put back to the to the
+[0:22:47] to the pin box.
+[0:22:49] Okay.
+[0:22:50] Um so the setting is the following,
+[0:22:53] right? We we is a collaboration with
+[0:22:54] NVIDIA Gear team. So we we we we we we
+[0:22:57] had eight robots. Each robot is with a
+[0:23:00] 5090 GPUs. And for each task, we start
+[0:23:03] from 50 demonstrations and we allow only
+[0:23:05] 20 minutes per idea to implement per
+[0:23:07] ideas.
+[0:23:08] And all the agents start from like empty
+[0:23:11] code base. And we are actually doing a
+[0:23:13] very interesting like a team settings.
+[0:23:15] We have eight agents work together and
+[0:23:17] we have a shared, you know, GitHub repo.
+[0:23:20] Each agent has its own branch. Right?
+[0:23:22] For each idea, I need to git commit to
+[0:23:24] this branch. And all other agents can
+[0:23:26] read
+[0:23:27] you know, whatever agent
+[0:23:29] can read other agents' idea and copy and
+[0:23:31] steal
+[0:23:33] from their years. For example, you can
+[0:23:34] see if it's my cursor, at some point,
+[0:23:36] agent eight, you know, steal idea, quote
+[0:23:38] unquote, steal idea from agent one and
+[0:23:40] agent two, right? To combine with his
+[0:23:42] own idea to have some breakthrough in
+[0:23:44] terms of the success rate.
+[0:23:46] Yeah.
+[0:23:46] Okay. So this is the setting. So the
+[0:23:49] hardest part of this project is actually
+[0:23:51] the first step. It's actually to build a
+[0:23:53] gym-like environment in real world for
+[0:23:55] agent to hill climb, right? And with
+[0:23:57] that, basically hill climbing is as, you
+[0:23:59] know, in the digital world, right? So
+[0:24:01] what I mean by a gym-like environment is
+[0:24:03] this
+[0:24:05] We define the reset function, we define
+[0:24:07] the get reward function, we define the
+[0:24:09] get observation function, we define the
+[0:24:11] step function, right? This is literally
+[0:24:13] as how you train a game agent or RL
+[0:24:15] agent in general, like DM control and
+[0:24:16] other
+[0:24:18] whatever this simulation environment.
+[0:24:20] Yeah. And this part is not autonomous,
+[0:24:23] at least at that time, right? It's like
+[0:24:24] agent design is together with human in
+[0:24:26] the loop. Yeah. Just want to you one
+[0:24:28] example of the reward function. This can
+[0:24:30] reward function you can see here with
+[0:24:32] human in the loop, agent actually came
+[0:24:34] up with a pretty smart solution. Right,
+[0:24:36] we use sample three, right, and segment
+[0:24:38] into two. Right, we use two cameras,
+[0:24:40] right? If both camera thinks that zip
+[0:24:43] tie task is a success, and we will give
+[0:24:46] a reward function Y, otherwise reward is
+[0:24:48] zero. Right, this is fairly robust way
+[0:24:50] to generate reward signal in this case.
+[0:24:53] Yeah, and after we build this gym like
+[0:24:55] environment, like auto research starts,
+[0:24:58] which is a boring part that human has
+[0:24:59] nothing to do
+[0:25:01] uh in in that stage. But but but before
+[0:25:03] that a human developed this environment
+[0:25:05] together with agent. Okay. And uh uh
+[0:25:08] this is like how how it works for zip
+[0:25:09] tie. You can see after four hours
+[0:25:11] roughly uh reward hill climbing where we
+[0:25:13] can solve this pretty challenging, you
+[0:25:14] know, zip tie task. Actually learned a
+[0:25:16] lot of interesting retry behavior. You
+[0:25:18] can see it didn't work here, and it
+[0:25:20] retry, retry, retry. After a couple of
+[0:25:23] seconds, it can do the zip tie.
+[0:25:26] Just bear with me, it's a pretty
+[0:25:27] interesting retry behavior here. Okay,
+[0:25:29] and it's a little bit unlucky for the
+[0:25:31] first one, for the second one, the third
+[0:25:33] one, it it it can it can do do it much
+[0:25:35] faster. Yeah.
+[0:25:37] The second one is just like a one shot
+[0:25:39] success.
+[0:25:41] And the third one is another uh one shot
+[0:25:44] success. Right, it's again a a vision
+[0:25:46] based policy. Uh start from empty code
+[0:25:49] paste and only 50 teleoperation demos.
+[0:25:52] Okay, this is the third one.
+[0:25:55] All right.
+[0:25:56] And apparently a big issue of impair is
+[0:25:58] is too expensive. Right, you need a
+[0:26:01] eight agent, you need a lot of tokens,
+[0:26:02] you need a eight GPUs, right? You need
+[0:26:04] four hours reward hill climbing. And the
+[0:26:06] biggest issue in the hill climbing
+[0:26:08] process is the motors start overheating.
+[0:26:10] That is still need human help. Okay, can
+[0:26:12] we do better? So the idea in in a SIMEX
+[0:26:15] is, okay, seems like simulation we
+[0:26:17] didn't really use simulation in impair
+[0:26:19] project, right? What if we pre-train the
+[0:26:21] agent in simulation and transfer the
+[0:26:23] skills in a real world? Right, in a in a
+[0:26:26] SIMEX setting, right, is even more
+[0:26:28] aggressive. We are not even providing a
+[0:26:29] single demos. We provide zero
+[0:26:31] demonstrations. And we are not even all
+[0:26:33] any neural policy. It's only code as
+[0:26:35] policy. Agent is not allowed to train
+[0:26:37] any policy or download VOA whatever
+[0:26:40] or whatever. So so on the high level,
+[0:26:43] what Sim2Real does is it it it kind of
+[0:26:46] like leverage intuitive physics in
+[0:26:48] roughly crack simulation and build a
+[0:26:50] reusable toolbox, right? Then it
+[0:26:52] transfer all these tools, knowledge, and
+[0:26:55] procedure from Sim2Real. Yeah. And
+[0:26:58] before talking about the details, I want
+[0:26:59] to just show you these demos. Uh you can
+[0:27:01] see like Sim2Real works pretty well for
+[0:27:03] this, you know, a barcode scanning task
+[0:27:06] uh within only like within 10 minutes of
+[0:27:08] real world data.
+[0:27:10] For for each task, we only allow five
+[0:27:12] real world trials.
+[0:27:13] Yeah, it can actually do this
+[0:27:14] autonomously. Everything's vision based.
+[0:27:16] We we we yeah.
+[0:27:18] And it's folding a towel. Some tasks
+[0:27:20] really hard to simulate.
+[0:27:23] Again, there's no new no neural policy
+[0:27:25] at all. Like everything's code as policy
+[0:27:27] in this video. And put all these plates
+[0:27:29] into this this thing or tray. Yeah.
+[0:27:33] It's eight eight eight X. A little bit
+[0:27:35] slow largely because we do have a safety
+[0:27:37] harness. We don't allow the agent to be
+[0:27:40] faster than certain speed in real world
+[0:27:42] due to the safety concern. Yeah. Okay.
+[0:27:44] So how how exactly did we do that? Two
+[0:27:46] stage. This is very similar to Sim2Real,
+[0:27:48] but it's like agentic Sim2Real in a way.
+[0:27:51] So in stage one, right? We have two
+[0:27:53] agent. One agent that is called a probe
+[0:27:56] agent. This agent is going to propose a
+[0:27:58] new task to let another agent solve.
+[0:28:00] Right? You can see the hill climbing
+[0:28:01] process, right? The in in the first
+[0:28:03] cycle, the probe agent propose a single
+[0:28:06] simple task, right? Just a single
+[0:28:07] bottle. That's it. And we have
+[0:28:10] the other agent trying to solve this,
+[0:28:12] right? Using code as policy. Then the
+[0:28:14] second cycle, the probe agent try to
+[0:28:16] make it harder, right? And then finally
+[0:28:18] you can see the probe agent try to make
+[0:28:20] it really hard like
+[0:28:22] change the lightning condition, the
+[0:28:23] gravity, the friction, everything you
+[0:28:25] can imagine. I I have a joke. I call
+[0:28:27] this agentic domain randomizations. If
+[0:28:29] you if you know if you work on Sim2Real,
+[0:28:31] you know what I'm talking about.
+[0:28:33] Yeah, and after this like agentic like
+[0:28:35] domain randomization like a game between
+[0:28:38] probing agent and the policy agent, we
+[0:28:41] transfer this to real. We go to the the
+[0:28:43] second phase on the on the right, right?
+[0:28:45] And basically in this case, we only
+[0:28:47] allow five trials and however this
+[0:28:50] interesting
+[0:28:51] important is agent can actually come
+[0:28:53] back to same, can actually come back to
+[0:28:55] same to improve the simulation, right?
+[0:28:58] And this is more like agentic real to
+[0:29:00] same to real stuff. Yeah, you can see a
+[0:29:01] comparison between if you start from
+[0:29:03] scratch without simulation, right? Get a
+[0:29:05] very very low progress, but if you start
+[0:29:08] from pre-training quote unquote
+[0:29:09] pre-training simulation, the progress is
+[0:29:11] much faster. The intuition is like even
+[0:29:13] though the simulation is wrong, but the
+[0:29:14] intuitive physics is enough to learn a
+[0:29:17] reusable toolbox.
+[0:29:18] Okay, and some interesting you know
+[0:29:21] robustness, you can here I I just want
+[0:29:23] to prove like this is not hard-coded
+[0:29:25] colas policy. You can see in this videos
+[0:29:27] on the left because the the the blue the
+[0:29:29] blue plate is very close to the boundary
+[0:29:31] of the tray, right? The agent decide to
+[0:29:34] not agent the colas policy decide to
+[0:29:36] grasp from the right.
+[0:29:37] On the on on the right video because the
+[0:29:40] the blue plate
+[0:29:41] is far away from the tray and the colas
+[0:29:44] policy decide to pick up from the left
+[0:29:45] side, right? Is that it has some
+[0:29:47] contextual awareness. It's not
+[0:29:49] hard-coded you know policy. Another
+[0:29:51] example is that we we also observe some
+[0:29:54] interesting recovery and the retrial
+[0:29:55] behavior. You can see here in the in the
+[0:29:57] first round, right? In the first first
+[0:29:59] grasp sorry let me come back. First
+[0:30:00] grasp is actually a miss grasp, right?
+[0:30:02] It didn't really grasp the the object
+[0:30:04] and it quickly retry, right? And and
+[0:30:06] this is like retrial behavior. I just
+[0:30:08] want to show you you know because we
+[0:30:09] have this agentic domain randomizations
+[0:30:11] and the policy is fairly robust and it
+[0:30:13] can sort of
+[0:30:15] adapt to all these different scenarios.
+[0:30:18] Okay, and finally succeed all these
+[0:30:20] three object for scan the barcode task.
+[0:30:25] Again, I want to highlight
+[0:30:27] zero demonstrations on colas policy,
+[0:30:29] zero neural policy. And also again the
+[0:30:32] simulation doesn't have to be correct,
+[0:30:34] right? In this case
+[0:30:35] the trust me the the we did have a
+[0:30:37] simulation for this tall the deformer
+[0:30:39] object, but it's really not good. We
+[0:30:40] tried, we did some rough six ideas, not
+[0:30:42] even close. However, it it doesn't
+[0:30:44] matter because the the intuitive physics
+[0:30:46] is enough
+[0:30:47] for agent to learn a reusable toolbox,
+[0:30:50] right? Even the simulation is pretty
+[0:30:51] coarse.
+[0:30:53] Okay.
+[0:30:54] Uh this is like the the the Sim X. Okay.
+[0:30:57] Uh I think I have five more minutes
+[0:30:59] roughly. So I would like to go to the
+[0:31:01] third paper I want to talk about, which
+[0:31:03] is our really recent effort called
+[0:31:05] embodied first exam. Uh uh like check
+[0:31:08] out the the the website for more
+[0:31:09] details. There are a lot of exciting
+[0:31:11] result and backing findings. And on a
+[0:31:13] high level, it is like a agentic native
+[0:31:16] comprehensive evaluation framework for
+[0:31:17] coding agent on robotic tasks. And
+[0:31:21] and you can see the key designs like we
+[0:31:23] want to make it as simple as possible is
+[0:31:24] like same as how language model agent
+[0:31:26] people evaluate language model agent. Uh
+[0:31:28] we use a framework called Harbor, like a
+[0:31:30] one terminal line. We can
+[0:31:31] simultaneously, you know, uh evolve the
+[0:31:34] coding agent on thousands of tasks.
+[0:31:36] Right? You can you can specify your own
+[0:31:37] harness like here Codex. You can specify
+[0:31:39] your own model like GPT-6 Astra. And
+[0:31:42] it's pretty comprehensive, right? We
+[0:31:43] include all these different tasks
+[0:31:47] far beyond pick and place include like a
+[0:31:49] drones, humanoids, Dexter hand, you
+[0:31:51] know, two humanoids fighting fighting
+[0:31:52] each other, this this kind of stuff.
+[0:31:54] Yeah, watch our three settings because
+[0:31:55] we want to emphasize, you know, you
+[0:31:57] know, like real world is more complex,
+[0:31:59] right? So in the privileged setting, the
+[0:32:01] agent has direct access to everything
+[0:32:03] simulation. This is upper bound. It can
+[0:32:05] read all the setting simulation, the
+[0:32:06] geometry, contact force, whatever it
+[0:32:09] wants. And the standard setting, right?
+[0:32:10] It only know the vision. It only know
+[0:32:12] the raw sensory input. And the real time
+[0:32:14] set setting is the most interesting to
+[0:32:16] me personally. We don't pause the
+[0:32:18] simulation during the agent's thinking.
+[0:32:20] The agent need to reason when the
+[0:32:22] simulation is running.
+[0:32:24] Okay. And you know, Fable was just
+[0:32:26] released and
+[0:32:28] thanks students hard work. We we also
+[0:32:30] the Fable 5.2 result. Not surprisingly,
+[0:32:33] it is it's it's even stronger than than
+[0:32:36] Astra. So basically like we have 1,000
+[0:32:38] task. We selected 456 core task that
+[0:32:42] cannot be solved by GPT-6
+[0:32:44] Luna. Because unfortunately we are still
+[0:32:46] academia skill, right? We
+[0:32:48] We cannot afford all certain task. So we
+[0:32:50] filtered out those quote-unquote simple
+[0:32:53] task that can be solved by GPT-6 Luna
+[0:32:55] and we kept 400 core. And you can see
+[0:32:57] like this is the result of the standard
+[0:32:59] setting, remaining standard setting.
+[0:33:01] Agent is only access to the raw sensory
+[0:33:04] input. You can see fable is roughly 50%
+[0:33:07] and asteroid is like 34% and all other
+[0:33:10] We also did a lot of experiment open
+[0:33:11] source model like JLM, DeepSeek, you
+[0:33:14] know, Qwen, Kimi,
+[0:33:16] Ada, Ada. Yeah. And in the in a
+[0:33:18] real-time setting, right? Like the
+[0:33:19] number is even lower because the number
+[0:33:21] is lower because real-time is hard. We
+[0:33:23] don't pause the simulation, right? You
+[0:33:24] can see like fable is
+[0:33:26] 41% and finally I want to give you a
+[0:33:28] sense what is still hard problem because
+[0:33:30] if you go to privilege, which means you
+[0:33:33] know, agent has access to everything
+[0:33:34] simulation including geometry, friction,
+[0:33:36] contact, so on so forth, the success
+[0:33:39] rate is a lot higher, right? So robotics
+[0:33:41] is still hard problem because everything
+[0:33:42] is fundamentally partially observable.
+[0:33:45] Okay. Want to talk about a little bit
+[0:33:47] detail on that. So we carefully designed
+[0:33:49] the task distributions. We actually
+[0:33:51] designed nine brand new original task
+[0:33:54] suite. Very interesting all the way from
+[0:33:56] solving puzzles in robot arc to like
+[0:33:59] paintings in robot paint to Olympics,
+[0:34:01] right? To Dexterous Hand, to Robot
+[0:34:03] Engineer like Sim-to-Sim, to all these
+[0:34:05] like
+[0:34:07] different task. And we also incorporate
+[0:34:10] all these existing benchmark in the
+[0:34:12] community like Robot Dojo, Robot Casa,
+[0:34:14] BK-1K,
+[0:34:16] Libero, blah blah blah blah blah. Yeah,
+[0:34:18] you can see like we covered many
+[0:34:20] different embodiment, right? From single
+[0:34:21] arm, two arm to humanoid, Dexterous
+[0:34:23] Hand, area manipulators. We also cover
+[0:34:26] many capabilities, you know, object
+[0:34:28] transport, multi-object transport, you
+[0:34:30] know, dynamic interaction, two use,
+[0:34:33] so on so forth. Yeah.
+[0:34:35] Okay. So another thing I want to
+[0:34:37] highlight is we don't really constrain
+[0:34:39] how agent control the robot. So in
+[0:34:41] general there are there are four ways,
+[0:34:43] right? Either agent can directly
+[0:34:45] generate control signal, we call it
+[0:34:47] agent as policy, right? Agent directly
+[0:34:49] all to you know the end effector
+[0:34:51] position for example, or agent can write
+[0:34:53] a code to control the robot or agent can
+[0:34:56] train a policy in simulation, right? To
+[0:34:58] to control the robot or a mixture. We
+[0:35:01] don't really constrain that because we
+[0:35:02] think it is agent's job to figure out
+[0:35:04] what they should do rather than you know
+[0:35:06] we constrain what they should do. And in
+[0:35:09] in some suite we did provide GPU, right?
+[0:35:11] For agent to train policy. For example,
+[0:35:13] this robot Olympics in the fencing,
+[0:35:14] right? You can imagine because this is
+[0:35:16] human always still need a system zero.
+[0:35:18] In this case like a agent actually use
+[0:35:21] GPU to train a whole body control policy
+[0:35:23] to do this fencing task.
+[0:35:27] Okay.
+[0:35:28] I want to share some interesting
+[0:35:30] findings. There are tons of findings of
+[0:35:31] figure analysis in the archive paper.
+[0:35:33] Please check it out. So but this is like
+[0:35:34] my favorite one. I think in general like
+[0:35:36] this is not winner takes all. What I
+[0:35:38] feel is pretty interesting. Let me
+[0:35:40] explain this figure a little bit. This
+[0:35:41] is like a
+[0:35:42] like all
+[0:35:43] agent and each bar is a task. And black
+[0:35:48] means color means this task is solved by
+[0:35:50] by this agent. The number means number
+[0:35:53] means in this task how many agent can
+[0:35:55] solve it, right?
+[0:35:56] So number one is still fairly expensive.
+[0:35:59] We we compute the token the token cost,
+[0:36:01] right? Even the cheap task is still like
+[0:36:03] point something dollar. The hard task is
+[0:36:05] like $30. It's still really really
+[0:36:07] expensive. Another thing which is really
+[0:36:09] interesting is like this is not winner
+[0:36:10] takes it all because you can see here
+[0:36:13] these tasks are filled by filled by
+[0:36:15] GPT-6 extra, but some other model can
+[0:36:17] still occasionally solve them, right?
+[0:36:19] Even even like a
+[0:36:20] smaller each model, right? So I feel
+[0:36:23] like their capability are some sort of
+[0:36:25] like a
+[0:36:26] that that's basically mean there's a
+[0:36:27] huge space for meta agent, right? It's
+[0:36:29] like you can design a framework calling
+[0:36:31] different type of agent and feel like
+[0:36:33] this sort of showing that in some sense.
+[0:36:35] Yeah. Okay. And finally I think we are
+[0:36:38] perfect timing. I just want to share
+[0:36:39] some personal aha moment.
+[0:36:41] I asked my PG student to add all my PhD
+[0:36:45] work to this to to to
+[0:38:46] >> Yeah, so I think those are really
+[0:38:47] interesting open questions we should as
+[0:38:49] a community understand together. Okay,
+[0:38:51] thank you very much.
+[0:38:55] >> Thank you for
+[0:38:56] our thoughts
+[0:38:57] and we have time for one quick question
+[0:38:59] from the audience.
+[0:39:01] Any question from the audience?
+[0:39:45] >> Probably it's not a good idea to
+[0:39:46] directly do
+[0:39:48] Yeah.
+[0:39:49] >> I mean that agent can call the system
+[0:39:51] directly instead of training
+[0:39:53] >> Yeah, that's also possible. Yeah, I
+[0:39:55] think with a good enough simulation,
+[0:39:57] yeah, that's possible.
+[0:39:59] Yeah, maybe we don't even need agent can
+[0:40:01] run
+[0:40:01] code to control everything. I think
+[0:40:03] that's totally possible, but not not
+[0:40:04] yet. I didn't see this capability yet.
+[0:40:07] Yeah, yeah. Okay. Thank you
+[0:40:13] >> Can we have
+[0:40:15] people either come in or not come in?
+[0:40:19] Because
+[0:40:21] there's a lot of noise coming in, so
+[0:40:23] people inside please make some space for
+[0:40:25] the people who are at the door, but
+[0:40:28] yeah.
+[0:40:29] That's not Okay, door and then close
+[0:40:32] that door, please.
+[0:40:46] >> So to have a professor Ken from UC
+[0:40:49] Berkeley to share some hot takes on
+[0:40:52] general robotics. And welcome.
+[0:40:54] >> All right. Thank you, everyone.
+[0:40:56] First of all, tough act to follow there,
+[0:40:58] and I love I love Vanya. I really
+[0:41:00] appreciate that. I also I just want to
+[0:41:02] take a quick poll in here. How many
+[0:41:03] believe that the current
+[0:41:05] current
+[0:41:06] recipe for doing robotics is going to
+[0:41:08] solve all the problems?
+[0:41:11] Okay, good. How many of you are in favor
+[0:41:12] of agentic robotics?
+[0:41:15] Okay. All right. So that's nice to know.
+[0:41:17] All right. So let me give you my
+[0:41:18] perspective on this. First of all, these
+[0:41:19] are my fantastic students, many of whom
+[0:41:21] are in the audience, and I want you to
+[0:41:23] go and talk to them because they're
+[0:41:24] really the ones leading this effort. And
+[0:41:27] in particular, there's four students
+[0:41:28] that have been really taking heart in
+[0:41:30] this and and devoting huge amounts of
+[0:41:31] time. So we'll I'm going to get back to
+[0:41:33] their individual projects later.
+[0:41:36] I think we've talked about this. Most of
+[0:41:37] you know this issue about the robot data
+[0:41:39] gap. I won't have to dwell on that, but
+[0:41:41] there's really these two schools of
+[0:41:42] thought, exactly as Vanya said. These
+[0:41:44] sort of like some
+[0:41:45] different philosophies, and there really
+[0:41:48] there is still some tensions between
+[0:41:50] them.
+[0:41:51] The model based, of course, is all good
+[0:41:53] old-fashioned
+[0:41:54] engineering, the the the control theory,
+[0:41:57] and then the model free is is this new
+[0:41:59] things which I which I actually am very
+[0:42:00] interested in.
+[0:42:02] But we seem to have hit this plateau.
+[0:42:04] Success rates are about 80% that's sort
+[0:42:06] of state of the art, and it's very hard
+[0:42:08] every inch above that, every increment
+[0:42:10] above that gets very gets more and more
+[0:42:12] difficult.
+[0:42:13] The other issue I don't think people
+[0:42:14] talk about as much is just that there is
+[0:42:16] a black box. That the black box is a
+[0:42:19] problem for industry. Industry doesn't
+[0:42:21] like black boxes, and I'll come back to
+[0:42:23] why. But this is why we've seen this
+[0:42:25] issue where there hasn't been a lot of
+[0:42:26] uptake in by industry in these methods.
+[0:42:30] So
+[0:42:32] York York Yang wrote this actually I
+[0:42:34] thought incredibly honest post in May
+[0:42:38] basically noting all the valuations on
+[0:42:40] the money raised, but the lower right
+[0:42:41] was this little note that he made.
+[0:42:43] Basically the total amount of useful
+[0:42:45] work performed
+[0:42:47] is
+[0:42:48] approximately zero.
+[0:42:50] So that's an issue, and I call that the
+[0:42:52] the revenue crisis that I think we have
+[0:42:55] to really wake up to and have to address
+[0:42:58] because
+[0:42:59] you know I think these investors are
+[0:43:00] only going to wait so long. So
+[0:43:02] and by the way where's that revenue
+[0:43:04] going to come from? Honestly I don't
+[0:43:06] think it's going to come from
+[0:43:08] home robots in the near future. Is it
+[0:43:10] going to come eventually? I want it to
+[0:43:13] as much as you do but I don't think
+[0:43:16] that's going to
+[0:43:18] happen in the near term. And we already
+[0:43:20] actually have the robots automation,
+[0:43:22] right? And and let's not forget
+[0:43:24] you know robotics still this is what's
+[0:43:26] earning money out there every single day
+[0:43:28] doing jobs like this spray painting,
+[0:43:30] spot welding, assembly.
+[0:43:32] But if we want to start getting into
+[0:43:33] jobs that industry wants to have solved
+[0:43:36] then it's kind of what we call
+[0:43:37] variational automation, not fixed but
+[0:43:39] variational. Things will vary in
+[0:43:40] position, maybe the objects will vary.
+[0:43:43] Here's another example you know making
+[0:43:44] coffee. That's like something people
+[0:43:45] will pay for. And you know again that's
+[0:43:48] something that physical intelligence
+[0:43:50] others are starting to look at these
+[0:43:51] kind of tasks, right? So one of the
+[0:43:54] things that's happening though I think
+[0:43:55] is that industrial users want three
+[0:43:57] things. They want reliability, they want
+[0:43:59] speed, and they want interpretability.
+[0:44:02] That's that last one is important. They
+[0:44:04] don't like this black box. They want to
+[0:44:06] adopt it. They have to be able to
+[0:44:07] explain it to themselves and to their
+[0:44:10] bosses.
+[0:44:12] So what's been going on? The classic way
+[0:44:14] of doing robotics and model based,
+[0:44:17] right? So humans write code
+[0:44:19] and there's a whole workshop this
+[0:44:21] morning about
+[0:44:23] arguing about what's interesting because
+[0:44:25] there's people arguing that a world
+[0:44:26] model is a is a model. I okay we can
+[0:44:29] talk about that later but
+[0:44:31] but what I mean by model is is a is is
+[0:44:33] physics and and math. So the human or
+[0:44:36] code. And so humans will will write
+[0:44:39] this. It's not generally have to write
+[0:44:40] for every single application special
+[0:44:41] purpose. It's available now, it's
+[0:44:43] running, it's interpretable and it's
+[0:44:44] pretty reliable. It's working.
+[0:44:47] And so this characterizes what we have
+[0:44:49] with the new wave gen AI and it's
+[0:44:51] hopefully going to going to but it 's
+[0:44:53] not working yet and it's not
+[0:44:53] interpretable, and is it reliable? Well,
+[0:44:56] you know, we re-ran some of these libero
+[0:44:58] experiments in the spring, and you know,
+[0:45:01] when we moved things a little bit more
+[0:45:03] than than expected, Pi 0.5 dropped to
+[0:45:06] 20% success rate.
+[0:45:09] So that was a that was a concern. Is
+[0:45:11] there what are we going to do about
+[0:45:13] this? So it's maybe if it's not
+[0:45:14] reliable, ultimately when I say
+[0:45:15] reliable, I mean like industrial level
+[0:45:17] reliability, then what else is there? So
+[0:45:20] this is what we've been been thinking
+[0:45:22] about. What what can join these things?
+[0:45:24] And that was also simultaneous as said
+[0:45:27] that there was this huge
+[0:45:29] just really simultaneous
+[0:45:31] improvement in large models, sorry, in
+[0:45:34] large language models and especially
+[0:45:36] agentic systems communicating with each
+[0:45:39] other. And and that really took off.
+[0:45:41] Coding abilities in particular were
+[0:45:43] extremely good. And two students who
+[0:45:45] were in my lab, Max Fu and Justin Yu, I
+[0:45:48] don't know if they're here. You guys
+[0:45:49] around?
+[0:45:50] They Oh, all right, there he is. All
+[0:45:52] right, so they they were working with
+[0:45:54] another group of students over at
+[0:45:56] Carnegie Mellon,
+[0:45:58] Nvidia, Stanford, Bayer. Guangyu was on
+[0:46:00] this paper. Basically this effort with
+[0:46:02] Jim Fan, Yuka,
+[0:46:04] basically the question is could could
+[0:46:06] these new agents, this new breed of
+[0:46:08] agents write code, robot code? And so
+[0:46:11] there was prior there is a precedent for
+[0:46:13] this, and so the code as policy ideas
+[0:46:16] went back to 2023
+[0:46:18] and work by a number of researchers,
+[0:46:21] Jackie Liang and others, who were
+[0:46:24] exploring this and Animesh Garg. And the
+[0:46:27] issue is that fortunately at that time
+[0:46:30] the LM code capabilities were not that
+[0:46:32] great, but it was it was interesting. So
+[0:46:33] we went back and revisited that, and the
+[0:46:35] Kapex paper looked at re-evaluated a lot
+[0:46:38] of the
+[0:46:39] some of these benchmarks under the new
+[0:46:42] the capabilities, and we were able to
+[0:46:43] show that remember that 20% I showed you
+[0:46:45] earlier? Well, we were able to almost
+[0:46:47] double it to 37% using Kapex harness. So
+[0:46:51] that was that really caught my
+[0:46:53] attention. That I was very excited about
+[0:46:55] that because I was that really seemed
+[0:46:57] like maybe that could fill this gap.
+[0:46:59] So, the idea, the hypothesis is there's
+[0:47:01] an agentic robotics gap and
+[0:47:04] um or sorry a a a gap in reliability
+[0:47:08] and speed and interpretability and maybe
+[0:47:11] agents need to be able to have all those
+[0:47:13] capabilities.
+[0:47:14] The one issue was the code is complex
+[0:47:16] for robots. It's not trivial. I mean
+[0:47:19] so when you have a lot of agents working
+[0:47:20] or even a single agent they they they
+[0:47:22] tend to get a little confused when with
+[0:47:24] when it's trying to repair and patch and
+[0:47:26] improve code. So, um Eric uh Chan who
+[0:47:31] was is a systems guy in our lab um but
+[0:47:35] he he was working with Rust and he said
+[0:47:37] you know here's a why are we writing
+[0:47:39] everything in Python that Rust
+[0:47:43] Rust is very well typed, well
+[0:47:45] structured, compiles well and organized
+[0:47:47] and basically the key idea there is that
+[0:47:49] it's a graph.
+[0:47:51] So, maybe we should be writing using the
+[0:47:53] graph structure.
+[0:47:54] And basically that insight was very
+[0:47:56] powerful and led to a paper that's
+[0:47:58] called Graph as Policy which we
+[0:47:59] presented here and uh but we we we
+[0:48:02] submitted in May and the idea is that we
+[0:48:06] the the code itself is structured as a
+[0:48:08] computation graph. That means that
+[0:48:10] there's a subgraph for our perception,
+[0:48:11] subgraph for grasping, and a subgraph
+[0:48:13] for motion planning.
+[0:48:15] And so this is uh very similar to the
+[0:48:17] Empire and Aspire work that was going on
+[0:48:20] and and others who are exploring this
+[0:48:22] around the same time and we just but the
+[0:48:25] one difference I I would say is that we
+[0:48:26] were emphasizing these
+[0:48:28] these industrial applications and so you
+[0:48:29] see that the output of this is a graph
+[0:48:32] that is exported so the graph is it
+[0:48:34] doesn't require an agent at all, right?
+[0:48:36] It's just pure code just running. In
+[0:48:38] fact it's a Ross graph.
+[0:48:39] So, uh but the key thing in here is this
+[0:48:42] um the the the little node in there that
+[0:48:44] says NVIDIA is where the simulation has
+[0:48:46] to occur cuz that's how it's going to
+[0:48:47] improve. Oh by the way I was going to
+[0:48:49] say this is this we went back and looked
+[0:48:51] at these
+[0:48:52] these numbers. We re-ran this with Gap
+[0:48:54] and we saw this kind of performance. So,
+[0:48:57] this really uh
+[0:48:59] that that kind of blew my mind. So we're
+[0:49:01] talking about the dramatic increases in
+[0:49:05] performance after being able to iterate
+[0:49:06] and learn and fine tune the code.
+[0:49:09] So
+[0:49:10] this got us interested and also a lot of
+[0:49:13] our sponsors got increasingly interested
+[0:49:15] in this and then we have been pursuing a
+[0:49:18] number of different case studies trying
+[0:49:19] to understand it. So this is one we
+[0:49:21] talked about Push T. Actually Kwani just
+[0:49:22] showed that and Shuang Yu said hey could
+[0:49:26] we we could could we get an agent to
+[0:49:27] solve that? So she actually had that
+[0:49:29] running. She has Claude Fable and it was
+[0:49:31] able to solve Claude Push T very quickly
+[0:49:34] and then she said let's generalize that
+[0:49:37] to all the letters and basically it
+[0:49:39] started working on that. Basically you
+[0:49:41] can see it's self learning and basically
+[0:49:43] got that up to very very high percentage
+[0:49:45] very fast.
+[0:49:47] We were optimizing for the speed of
+[0:49:49] alignment and so the hardest problem the
+[0:49:51] hardest letter was Q. As you can imagine
+[0:49:54] it makes sense right? You have to push Q
+[0:49:55] all the way around. So this
+[0:49:59] here's an example of this running. Here
+[0:50:01] she has 99% success rate. It's very fast
+[0:50:04] compared to even the optimal strategy
+[0:50:06] which we found from Matt Mason's group
+[0:50:08] was
+[0:50:09] actually requires an infinite pushing
+[0:50:11] plane. So if you're constrained to being
+[0:50:13] within a
+[0:50:15] area like this then then this is optimal
+[0:50:18] or not optimal but better than that.
+[0:50:20] So she's able to spell out letters.
+[0:50:22] Anyway that project was very very
+[0:50:24] inspiring and then
+[0:50:26] we were also working with
+[0:50:28] with Nvidia on Isaac Lab Arena and we
+[0:50:31] started thinking well what if we started
+[0:50:32] using Newton because Newton is really
+[0:50:34] increasingly powerful as a as a
+[0:50:36] simulation engine. The problem is Newton
+[0:50:38] is pretty complex. There's a lot of
+[0:50:40] parameters that have to be tuned and
+[0:50:41] that's probably why it hasn't really
+[0:50:43] taken off because you know it's just
+[0:50:44] hard to configure.
+[0:50:46] So
+[0:50:47] Eric thought okay I'm going to write a
+[0:50:49] new front end for Newton which he called
+[0:50:52] Robo Sim Studio and basically he used he
+[0:50:55] used the
+[0:50:56] a bunch of tools to make it easy just
+[0:50:58] like sliders on the left on the right
+[0:51:01] sorry and then so that it can configure
+[0:51:04] um simulations like this in Newton. Very
+[0:51:06] high quality pure physics simulations
+[0:51:09] with we could configure all the many
+[0:51:10] parameters that you have to get right so
+[0:51:13] that behavior matches what he was able
+[0:51:15] to what he's looking at intuitively.
+[0:51:18] And so this uh this by the way has been
+[0:51:20] released and it's fully available to
+[0:51:21] anyone who wants to use it cuz Newton is
+[0:51:23] wide open and so is so is this this
+[0:51:26] tool.
+[0:51:27] Um so he was able to fine tune things
+[0:51:29] like this where you can really get the
+[0:51:31] the physics to look right.
+[0:51:33] And so he was looking at a lot of
+[0:51:34] different deformable scenarios etc. So
+[0:51:36] this was still a kind of gap because we
+[0:51:38] were we were trying to get this to the
+[0:51:41] the the a bottleneck was good
+[0:51:43] simulators.
+[0:51:45] So and then as Jeff exactly as
+[0:51:47] as Guanya said, I thought it was
+[0:51:49] September 3rd but maybe it was the 4th.
+[0:51:51] Anyway came Astra came out and it was
+[0:51:53] really mind blowing. So Eric said I'm
+[0:51:56] going to give
+[0:51:57] uh my new tool namely RobotSim Studio to
+[0:52:00] um to Astra and see what it could do and
+[0:52:02] it also just gave it this one video.
+[0:52:04] This was a video of a project that we
+[0:52:06] were doing in the lab that wasn't
+[0:52:07] related to this at all but he just gave
+[0:52:09] it this video and he said can you
+[0:52:10] recreate this? So in an hour um
+[0:52:14] I was able to take that input video and
+[0:52:16] notice the sponge deformations.
+[0:52:18] Basically it read the read the
+[0:52:19] documentation, read the code from RSS
+[0:52:22] and started understanding what how to
+[0:52:24] configure Newton. Then I was able to
+[0:52:25] actually do this where the real and sim
+[0:52:28] are almost um
+[0:52:30] almost identical and it was just
+[0:52:32] sweating details like where is the
+[0:52:33] camera? Where are the lights? What is
+[0:52:35] the materials? Anyway so then I was able
+[0:52:37] to get this to actually go back and now
+[0:52:39] use gap once we had a good simulator to
+[0:52:43] write code for this task and here's what
+[0:52:44] the graph looks like. It's easy to to to
+[0:52:47] just look and inspect but then here is
+[0:52:49] the the result running in sim and you
+[0:52:52] can see that you can because you have
+[0:52:54] the physics simulation of Newton you can
+[0:52:56] see all the forces, moments, everything
+[0:52:58] that's going on with that with that and
+[0:53:00] the and the the spring constants of all
+[0:53:02] that of that mesh of the of the of the
+[0:53:05] sponge.
+[0:53:06] So then he actually took it did a real
+[0:53:09] rollout.
+[0:53:10] And so took that code that was basically
+[0:53:12] written by app and then ran that on the
+[0:53:14] real robot and that worked. Except there
+[0:53:16] was a case one one one failure case. And
+[0:53:18] so notice what happens here. It pushed a
+[0:53:20] little too hard and the bar falls over.
+[0:53:22] So
+[0:53:23] we looked at that we said what oh it
+[0:53:25] didn't realize from the video that the
+[0:53:27] bar wasn't mounted down wasn't screwed
+[0:53:30] down. So then we just gave it that video
+[0:53:32] and we said uh it it didn't work here
+[0:53:35] and it figured out oh there was a
+[0:53:38] the the the thing isn't isn't held down
+[0:53:40] it could be pushed over I was putting
+[0:53:41] too much force on it. So then it
+[0:53:43] modified the graph basically added
+[0:53:45] another used decided to use its left arm
+[0:53:47] and then hold hold the bar down and that
+[0:53:50] solved the problem.
+[0:53:51] All right so I'm not saying it's going
+[0:53:52] to solve every problem but it's just one
+[0:53:54] of these things that are just really
+[0:53:56] surprising us.
+[0:53:57] Here's another case you're able to
+[0:53:58] simulate
+[0:54:00] sorry to go from real to sim for plants.
+[0:54:03] And this is a project that
+[0:54:05] led Simeon contributed. This is um this
+[0:54:08] is the input just a video of the
+[0:54:10] of the robot interacting with the plant
+[0:54:12] and inspecting it. Then giving that to
+[0:54:14] Astra it basically goes in starts
+[0:54:16] simulating and here's the result the
+[0:54:18] simulation is very very close. It even
+[0:54:21] spotted something in the background that
+[0:54:22] we didn't even know was there and it's a
+[0:54:24] it's a stuffed bear in the background
+[0:54:26] you can see it in the real. But it was
+[0:54:28] outside the lab it was in the window.
+[0:54:30] Anyway it reproduced the stuffed bear.
+[0:54:34] You got to be careful what you ask for.
+[0:54:36] Anyway it was very very good at
+[0:54:38] fine tuning all the plant parameters for
+[0:54:40] this um
+[0:54:41] for the scenario. And then here's a
+[0:54:43] high resolution um output where you see
+[0:54:46] like very high detail.
+[0:54:48] So I want to move on there's an um Swati
+[0:54:51] also did this one she just proposed this
+[0:54:53] challenge just flip these 44 objects
+[0:54:56] over. They're all tools just use a a bar
+[0:54:58] manual robot to flip these 180 degrees.
+[0:55:01] So basically it went to work on that and
+[0:55:03] basically got up to 95 percent. Here's
+[0:55:06] the graph and here's some of the
+[0:55:07] scenarios, right, where it's just it's
+[0:55:09] figured out certain objects have to be
+[0:55:11] handed over to be flipped. Other objects
+[0:55:13] you can just flip them by pushing them
+[0:55:15] across the table. So and that that
+[0:55:18] worked really nicely and then she she
+[0:55:20] tried her two objects she didn't train
+[0:55:21] it on in real and that also was able to
+[0:55:25] was able to succeed. It also it didn't
+[0:55:27] work all the time. So here's a failure
+[0:55:28] mode where
+[0:55:30] it picks up this object and if you watch
+[0:55:32] this it it it basically is a it's a
+[0:55:35] uh Allen wrenches and it drops it. Well,
+[0:55:38] when you look at it, it's very hard to
+[0:55:39] see but there there's a little curvature
+[0:55:41] in that green section and that's
+[0:55:43] something that was very hard for the for
+[0:55:45] the the agent to understand or detect.
+[0:55:47] And so that wasn't able to accommodate
+[0:55:49] that. Here's another one. This is
+[0:55:52] Xinyu who's a new PhD student. She
+[0:55:54] arrived and has been firing on all
+[0:55:57] cylinders, doing amazing job on all all
+[0:55:58] kinds of projects. This is one where
+[0:56:00] basically Siemens gave us this task,
+[0:56:02] just put these objects into um into
+[0:56:05] their proper slots in a bin, kidding
+[0:56:07] basically. And just again, notice it's
+[0:56:10] human hands doing this.
+[0:56:12] Basically she gives this to the Astra
+[0:56:14] sorry to Astra
+[0:56:16] RSS and it's able to generate this. It
+[0:56:18] also replaces the hands with
+[0:56:20] uh two two YAM arms. So once you have a
+[0:56:23] very high quality simulation like this,
+[0:56:24] she then trained it. She got up to 98.8
+[0:56:27] success on 500 unseen scenes. Okay, so
+[0:56:30] that's again very very close. We haven't
+[0:56:32] taken this back into real yet but this
+[0:56:34] is very this is encouraging. That's
+[0:56:35] basically 10 seconds per object. That's
+[0:56:37] industrial level speed and reliability.
+[0:56:40] Here's another case study real quick.
+[0:56:41] Oksang did um
+[0:56:43] something for Samsung. They wanted to uh
+[0:56:45] adjust hoses in the back of a
+[0:56:48] what do you call it? A dishwasher or a
+[0:56:49] washing machine. And so that's you just
+[0:56:52] that's all the input, right? Just a
+[0:56:53] short video of a human demonstrating it.
+[0:56:56] Then it goes to town, builds a model and
+[0:56:57] here's what that model is.
+[0:56:59] Almost, you know,
+[0:57:01] shockingly similar to to the input. They
+[0:57:03] also noticed where I put the robot arms.
+[0:57:06] They put them at a slightly staggered
+[0:57:07] position. Well, it turned out that turns
+[0:57:09] out to be very helpful for it to be able
+[0:57:10] to reach and hold the the the hoses
+[0:57:13] accordingly, so it can reproduce the the
+[0:57:15] actual task.
+[0:57:17] Here's another one which is washing
+[0:57:18] crates. This came from Bosch. Basically,
+[0:57:21] here's a human. We uh took Originally,
+[0:57:23] we made a mock-up of this. It took about
+[0:57:25] 3 weeks to get the simulation right.
+[0:57:27] But now with this new set of tools, the
+[0:57:29] new pipeline,
+[0:57:31] um we can do that very quickly. And
+[0:57:33] here's Actually, you can watch this
+[0:57:35] building the environment. It's going to
+[0:57:37] build the environment again just from
+[0:57:38] that one short video clip. And then
+[0:57:41] um here's what's cool. It's This is the
+[0:57:43] real the sim lined up, okay? And then
+[0:57:47] here's the graph for for controlling it.
+[0:57:49] Looks kind of complicated. Well, what
+[0:57:51] does it do? It's looking around and
+[0:57:52] figuring out where to place these two
+[0:57:54] robots so that it can flip these um
+[0:57:57] crates over. Well, because it's hard.
+[0:57:58] The the the kinematics is tricky. So it
+[0:58:00] finally decides that this is a good
+[0:58:02] location for them.
+[0:58:04] And then it starts doing the path
+[0:58:05] planning and motion modeling, collision
+[0:58:07] avoidance.
+[0:58:08] And then it drops it a few times. It's
+[0:58:11] having really struggling to get this to
+[0:58:12] work. Then it finally figures out this
+[0:58:14] solution.
+[0:58:17] I mean, these are these moments that
+[0:58:19] you're talking about where it's like you
+[0:58:20] just like your jaw drops and you're
+[0:58:22] like, what? Like I don't know how if I
+[0:58:24] would have ever figured that out or I
+[0:58:26] don't know if any of you would have.
+[0:58:27] It's just it's a really beautiful
+[0:58:29] example of a very clever output that it
+[0:58:32] was able to find as a solution to being
+[0:58:34] able to flip these these these crates.
+[0:58:37] All right. We've been looking Also, we
+[0:58:38] have a benchmark here. There's a paper
+[0:58:41] uh that was also just presented for
+[0:58:43] bar Or no, sorry. It's not here. It's
+[0:58:45] It's under review. Sorry, never mind.
+[0:58:47] But this is a This is a number of a new
+[0:58:49] benchmarks like the um the first exam
+[0:58:52] which uh um I I want to um promote as
+[0:58:55] well because I think this is what we
+[0:58:57] need right now is benchmarks and these
+[0:58:58] are not saturated. These are ones that
+[0:59:00] we haven't been able to solve
+[0:59:01] particularly well, but I encourage you
+[0:59:03] to um to try these and and push the
+[0:59:06] leaderboard. Um there are some really
+[0:59:08] nice interesting These are all
+[0:59:09] applications that we think are are
+[0:59:11] relevant for for industrial applications
+[0:59:13] like inserting um cables again for for
+[0:59:17] data centers or routing cables.
+[0:59:20] Also want to give credit to Spencer Wang
+[0:59:21] who we've been working with and also
+[0:59:23] note that this is collaborations with
+[0:59:26] the Empire team, the Aspire team
+[0:59:28] that many of whom are here. Really
+[0:59:30] quickly I want to give you a last
+[0:59:31] example which is a Ambi Robotics, the
+[0:59:33] the company I co-founded. We have we're
+[0:59:35] sorting packages all around the United
+[0:59:37] States and we had a problem which is
+[0:59:39] that one of our clients, I can't tell
+[0:59:40] you who it is but um
+[0:59:45] they they had a problem with their
+[0:59:47] packages jamming and so that was causing
+[0:59:50] 30,000 failures per year. That was
+[0:59:52] before a person to go over and unjam the
+[0:59:54] system. So
+[0:59:57] he took the gap system and over a
+[0:59:59] weekend he configured it to work on this
+[1:00:02] problem.
+[1:00:03] He figured it would take a human about a
+[1:00:05] month of human engineer time and
+[1:00:08] he came up with a solution. He actually
+[1:00:10] came up with three solutions.
+[1:00:12] The first two did not work and
+[1:00:16] they actually made it worse but the
+[1:00:18] third one worked well. So it cut the
+[1:00:21] number of failures in half.
+[1:00:24] So it's actually a problem and it's now
+[1:00:25] in production now in Philadelphia and
+[1:00:27] Atlanta and it's running as we speak.
+[1:00:29] All right, so this is where we are. I
+[1:00:30] think it's it's really interesting for
+[1:00:31] the revenue gap in particular. Again,
+[1:00:33] it's not this is where I think we have
+[1:00:36] an opportunity as a field and I
+[1:00:38] encourage those who are interested think
+[1:00:40] about this and take some time because we
+[1:00:42] can get out there and really help
+[1:00:43] getting these robots into production,
+[1:00:44] especially small and medium-sized
+[1:00:46] companies around the world.
+[1:00:47] Um okay, so one I'll leave you with some
+[1:00:49] spicy take. What is that is data dead?
+[1:00:52] Well
+[1:00:54] I know that's very controversial and I
+[1:00:56] don't I don't actually think that's true
+[1:00:58] but I think it's it's a it's a question
+[1:01:00] about all the demonstration data that
+[1:01:02] we're collecting for training VLAs.
+[1:01:05] I don't know. I think it can be useful
+[1:01:08] and hopefully it will be useful to train
+[1:01:09] models but again I think for this kind
+[1:01:12] of scenario
+[1:01:13] for For
+[1:01:14] with full generality then we are going
+[1:01:16] to probably need more general models,
+[1:01:18] um, more more
+[1:01:20] black box, if you will, models trained
+[1:01:22] with data, pure data. So there's still a
+[1:01:25] lot of interest there, but let's be
+[1:01:26] clear that if we're trying to solve for,
+[1:01:28] um, industry, it's it's very different
+[1:01:31] scenario.
+[1:01:32] I also want to say, you know, when I I
+[1:01:33] remember this book called Structure of
+[1:01:35] Scientific Revolutions when I was in
+[1:01:36] college and it was by Thomas Kuhn who
+[1:01:38] just talked about how science advances.
+[1:01:40] One of the things he noticed is that
+[1:01:42] when when things change, scientists
+[1:01:44] don't always realize it. They don't They
+[1:01:46] just can't really perceive it.
+[1:01:48] So he uses the example of the paradigm
+[1:01:50] shift in physics when everybody was
+[1:01:52] believing in
+[1:01:54] luminiferous ether. Almost all the
+[1:01:56] physicists agreed that that was that was
+[1:01:59] that was accurate. And then, uh,
+[1:02:00] Michelson
+[1:02:02] that didn't that was wrong. And it took
+[1:02:04] a couple years for everybody to kind of
+[1:02:06] digest and ex
+[1:02:11] Similar happened in mathematics.
+[1:02:12] Everybody kind of believed in the
+[1:02:14] Hilbert hypothesis that mathematics
+[1:02:16] could be codified. And it was Gödel in
+[1:02:19] 1931 that basically really it was
+[1:02:21] radical changed that. And it was, um,
+[1:02:23] again took a few years for the
+[1:02:24] mathematicians to accept that. So I'm
+[1:02:26] wondering, are we in a paradigm shift
+[1:02:28] for robotics?
+[1:02:29] I don't know, but I think it might be.
+[1:02:32] Big round of applause.
+[1:02:39] >> Um, next question quick question from
+[1:02:41] the audience.
+[1:02:43] >> You mentioned spot welding
+[1:02:46] is
+[1:02:47] one of the biggest, uh, industrial
+[1:02:49] applications of welding. Have you ever
+[1:02:50] tried agentic robotics for welding?
+[1:02:52] >> No, not yet.
+[1:02:53] >> Why not?
+[1:02:54] >> No, and we just haven't had time. But
+[1:02:56] but I think it would work.
+[1:02:57] Yeah.
+[1:02:59] >> Uh, one more quick question from the
+[1:03:01] audience.
+[1:03:08] >> Uh, you mentioned that, uh, for like,
+[1:03:10] uh,
+[1:03:10] house like housekeeping robot versus
+[1:03:13] like industry robot, they are uh, quite
+[1:03:15] different, uh,
+[1:03:17] like solutions for them. Do you think
+[1:03:19] there's there be like fundamental
+[1:03:20] different
+[1:03:22] workflow if we're trying to like improve
+[1:03:25] the robots recursively like
+[1:03:27] self-improvement
+[1:03:28] to develop that kind of agentic
+[1:03:30] workflow.
+[1:03:33] >> Yeah, I mean I I I was a little careful
+[1:03:35] not to say use RSI term, but it's
+[1:03:37] exactly what's going on, right? These
+[1:03:39] are working and interacting and proving
+[1:03:40] themselves and in sim and then going
+[1:03:42] into real and then it actually has moved
+[1:03:44] to a secondary cycle of improving itself
+[1:03:47] in real. But I also was going to say
+[1:03:49] like cleaning up around the house is one
+[1:03:50] thing, but cleaning up let's say in a in
+[1:03:52] a hotel
+[1:03:54] feels much more like a regularized. So
+[1:03:56] maybe that could be a task with
+[1:03:58] with agentic robots.
+[1:03:59] Anyway, I want to hand it over to
+[1:04:01] Philip.
+[1:04:02] >> Thank you. Thank you, Professor
+[1:04:03] Goldberg.
+[1:04:10] Next we have a sponsored talk from X-Fab
+[1:04:14] from
+[1:04:15] Philip.
+[1:04:19] >> Hello, thank you all for being here. My
+[1:04:21] name is Philip from X-Fab.
+[1:04:23] And it's amazing to be here at CoRL. I I
+[1:04:26] did my PhD at UC Berkeley.
+[1:04:29] Graduated two years ago and CoRL has
+[1:04:30] been one of my favorite conferences
+[1:04:32] always.
+[1:04:33] Back in 2022 we actually published
+[1:04:35] Daydreamer back in CoRL. And that's when
+[1:04:37] we were using world models to have
+[1:04:39] robots collect their own data data in
+[1:04:40] the world. I think that's very
+[1:04:41] reminiscent of what we're seeing agents
+[1:04:43] making possible today where agents can
+[1:04:45] now control robots to to collect data in
+[1:04:49] the world and then continually
+[1:04:50] self-improve from that data as Professor
+[1:04:52] Goldberg and
+[1:04:53] Quail were talking about earlier.
+[1:04:56] So here today I'm here to talk about a
+[1:04:58] little about what we at X-Fab do as well
+[1:05:00] as a little bit of interesting things
+[1:05:01] that we're doing in agentic robotics.
+[1:05:04] So I think what X-Fab is largely known
+[1:05:06] for is data. And so what you largely
+[1:05:08] hear throughout the conference today,
+[1:05:09] you'll probably hear us around helping
+[1:05:11] around a lot of the egocentric data
+[1:05:12] collection that's going on, a lot of the
+[1:05:13] teleoperation data.
+[1:05:15] We We can also control different types
+[1:05:16] of robots including Dex-Hands and do
+[1:05:18] this type of teleoperation as well as
+[1:05:19] machine type collections.
+[1:05:22] And we're one of the largest scaled
+[1:05:24] companies to date for doing this. We
+[1:05:26] have over 15
+[1:05:29] 1,500 stations be doing data collections
+[1:05:32] across all these different modalities
+[1:05:33] that we were talking about. And by end
+[1:05:35] of year we will have over 2 million
+[1:05:37] hours across
+[1:05:39] modalities.
+[1:05:42] To date we've raised about 2 million 200
+[1:05:44] million in total from investors and are
+[1:05:46] supported by these
+[1:05:48] venture capital companies
+[1:05:51] in the Bay Area.
+[1:05:53] And we generally consider ourselves
+[1:05:55] leading infrastructural company. And so
+[1:05:57] when we're looking at a lot of these
+[1:05:58] industrial companies and
+[1:06:00] kind of all the corresponding supporting
+[1:06:01] tooling that are helping support this
+[1:06:03] current
+[1:06:05] industry of general purpose robotic
+[1:06:07] models, Exowork is helping with a lot of
+[1:06:09] that. And so on the top row here you see
+[1:06:11] all these egocentric devices that we're
+[1:06:12] helping people collect with, all the
+[1:06:14] teleoperation data with all these
+[1:06:16] corresponding stations and hardware that
+[1:06:18] we help support. And I think exciting in
+[1:06:20] the past few months is people getting
+[1:06:22] really excited about the agentic robots.
+[1:06:24] And so I think Professor Goldberg posed
+[1:06:26] a really interesting question which is
+[1:06:28] is data dead?
+[1:06:29] Right? And so I think earlier we saw Jim
+[1:06:31] give a talk about Route 2 showcasing the
+[1:06:33] powers of data for these more VLA type
+[1:06:36] models. But we see this huge rise in
+[1:06:38] agentic robots. I think us as a company
+[1:06:40] that's supporting a lot of the
+[1:06:41] infrastructure, the question that we are
+[1:06:42] asking ourselves is how do we support
+[1:06:45] the corresponding training to make these
+[1:06:47] agentic models better?
+[1:06:48] And as we're all aware in ML, all models
+[1:06:51] need data. It's just a question of what
+[1:06:52] type of data and how do we train.
+[1:06:55] And so while from a lot in the academic
+[1:06:57] perspective it might be unclear how we
+[1:06:59] can continue to support the training of
+[1:07:01] these models, maybe we're just users of
+[1:07:03] these models. But I would also challenge
+[1:07:05] us to think about how these models are
+[1:07:07] actually improving within the labs and
+[1:07:08] what innovations we can make on that
+[1:07:10] front to actually maybe make these
+[1:07:11] agentic models more efficient, try
+[1:07:13] different strategies to continually
+[1:07:15] improve.
+[1:07:18] And so today I'll talk a little bit
+[1:07:19] about some of that work that we're doing
+[1:07:21] here.
+[1:07:23] So I think
+[1:07:24] the
+[1:07:25] previous talks have kind of already
+[1:07:27] covered these amazing capabilities of
+[1:07:29] robots, right? So we have language
+[1:07:30] models that can control things
+[1:07:31] end-to-end suddenly by code, all these
+[1:07:33] amazing capabilities with real decision
+[1:07:35] real.
+[1:07:37] And that's just a part, right? And sort
+[1:07:38] of it it it really increases the
+[1:07:39] accessibility of us to to have these
+[1:07:42] amazing capabilities for robotics.
+[1:07:46] And and so I won't talk it too much of
+[1:07:47] detail here. I think we're all very
+[1:07:48] familiar, right? We have
+[1:07:50] 5.2 being released showcasing these
+[1:07:51] amazing robotic capabilities. We have
+[1:07:53] these
+[1:07:54] very this I literally just ran
+[1:07:56] yesterday, just give it an image of a
+[1:07:58] kitchen and you just
+[1:08:01] say make a digital
+[1:08:03] and then what you see literally just
+[1:08:06] as well as all the corresponding
+[1:08:08] collision geometries. And I think what's
+[1:08:10] really amazing
+[1:08:11] as a PhD student two years ago, I was
+[1:08:13] literally in you know the MJCF file
+[1:08:15] manually modifying the XML. And now if
+[1:08:18] you look at how they generate this
+[1:08:20] collision mesh, the model the agent
+[1:08:22] itself will write the code to generate
+[1:08:24] every little detail. If you look at the
+[1:08:26] plates, it will make all the
+[1:08:27] corresponding you know low-level
+[1:08:29] collision meshes to really satisfy this
+[1:08:31] visual mesh that you see over here.
+[1:08:34] And so I think longer term what this
+[1:08:36] really means is that there won't really
+[1:08:38] be a ChatGPT.
+[1:08:40] Yeah, so so I I think this this is a
+[1:08:41] really interesting thing
+[1:08:43] and I think the you need to think about
+[1:08:45] the implications that this has for
+[1:08:46] robotics.
+[1:08:47] And for me what this means, there won't
+[1:08:49] really be a ChatGPT moment for robotics
+[1:08:51] cuz in principle it's already happened.
+[1:08:54] We have all these amazing robotics
+[1:08:55] capabilities
+[1:08:57] and the question is how do we actually
+[1:08:58] build applications for them?
+[1:09:00] So I think to me the the real bottleneck
+[1:09:02] why we haven't seen robotics out there
+[1:09:03] is a lot of the questions that we still
+[1:09:05] are asking. And to me these are these
+[1:09:07] like three things that we should be
+[1:09:08] really be thinking about. One is
+[1:09:09] hardware. How do we really push past
+[1:09:12] these hardware bottlenecks?
+[1:09:14] Unitree for example last year one of the
+[1:09:15] largest
+[1:09:17] hardware manufacturers, they produced
+[1:09:18] about 5,000 robots sold in
+[1:09:21] Even if we had the best models with best
+[1:09:24] How does 5,000 robots you know really
+[1:09:26] effective all the problem? It's not
+[1:09:28] price. We see hardware being a big
+[1:09:30] The big one is these systems.
+[1:09:32] I think that's Professor Goldberg
+[1:09:33] pointed out earlier. Not only do we need
+[1:09:35] these robots to be well in isolated
+[1:09:38] setting, we have to integrate them into
+[1:09:39] an end solution. And so that's why we'll
+[1:09:41] see all these companies really focus on
+[1:09:43] taking these agent capabilities and
+[1:09:45] building them into full applications and
+[1:09:46] solutions.
+[1:09:47] And I think the last thing is we'll be
+[1:09:49] seeing all these
+[1:09:50] model agent capabilities continually to
+[1:09:52] improve. And I think we as a community
+[1:09:54] need to continually adapt to these
+[1:09:57] increased capabilities and
+[1:09:58] think about how we can start integrating
+[1:10:00] them into robotics. So I think the
+[1:10:01] progress of these models will only
+[1:10:03] increase as time goes on.
+[1:10:06] So I'm running a bit out of time, but I
+[1:10:07] want to briefly touch on some of the
+[1:10:08] things that we at X are for doing in
+[1:10:09] this space.
+[1:10:11] We're really thinking about how we as a
+[1:10:12] company can help contribute to
+[1:10:14] benchmarking. And so I think a really
+[1:10:15] important thing is to really think
+[1:10:17] deeply about where these models are
+[1:10:19] improving and in a fashion. And that
+[1:10:21] will tell us where we need to put the
+[1:10:22] research effort to improve these
+[1:10:23] capabilities.
+[1:10:25] So I think a lot of people on Twitter
+[1:10:26] are looking at various different
+[1:10:28] axes of these, but I would really
+[1:10:29] challenge the academic community to
+[1:10:31] think critically about what components
+[1:10:33] that we're looking at. And so while
+[1:10:34] Astro proposed that they made a lot of
+[1:10:36] progress on certain certain benchmarks,
+[1:10:38] we use our own benchmark to to test
+[1:10:42] and what we found over here is that
+[1:10:44] Claude is actually matching a lot of
+[1:10:45] what Astro's capabilities are.
+[1:10:48] And and if you ask Claude because Claude
+[1:10:49] proposed that they have increased a lot
+[1:10:51] of other capabilities, you actually look
+[1:10:53] at the way we did this benchmark
+[1:10:55] is we focus on very specific
+[1:10:59] tasks.
+[1:11:00] So one here for example the model
+[1:11:04] the agent has to understand these
+[1:11:05] physics and it's a little bit it's quasi
+[1:11:07] static, but it needs to understand some
+[1:11:09] prehensile capability.
+[1:11:11] The other one over here which Claude did
+[1:11:12] much better on is follow the red sticky
+[1:11:14] note. And so in this fashion the model
+[1:11:16] has to identify the red sticky note,
+[1:11:18] read the task that is prescribed written
+[1:11:20] on the note and then correctly execute
+[1:11:22] the task.
+[1:11:24] And so we've done a lot of intentional
+[1:11:25] task design and how and how we look at
+[1:11:26] this benchmark.
+[1:11:28] And this is just showcasing of some of
+[1:11:30] the different physical capabilities that
+[1:11:32] we're looking at in terms of the tasks
+[1:11:33] that we put out here.
+[1:11:35] So thank you thank you for listening.
+[1:11:38] I think it's a really exciting time both
+[1:11:40] in
+[1:11:41] industry and research and we'll be
+[1:11:43] hiring across these and
+[1:11:45] and I think there's a real place for us
+[1:11:48] to really think critically in research
+[1:11:50] and in industry to collaborate to
+[1:11:52] continue to push these capabilities
+[1:11:53] forward.
+[1:11:54] Thank you.
+[1:12:00] >> Our next speaker is Wentao Yuan from
+[1:12:02] Google Gemini Robotics and he will share
+[1:12:04] about physical agents from orchestration
+[1:12:07] to self-improvement with Gemini. Let's
+[1:12:09] welcome.
+[1:12:47] All right.
+[1:12:50] So hello everyone.
+[1:12:52] I'm Wentao from the Gemini Robotics team
+[1:12:54] at Google DeepMind.
+[1:12:56] First thanks for the organizers for
+[1:12:58] having me.
+[1:13:00] And two days ago we just released Gemini
+[1:13:03] Robotics 2.5.
+[1:13:05] Hope you guys enjoyed the demo at the
+[1:13:06] booth.
+[1:13:07] So some of the stuff I talked about will
+[1:13:09] be very fresh but some of them will also
+[1:13:12] come from our primacy developed models
+[1:13:16] over over the course of a year.
+[1:13:20] So I think people have long judged
+[1:13:23] intelligence by so the body of creation
+[1:13:26] heights. For example we think humans are
+[1:13:29] intelligent because we have hands um,
+[1:13:31] they can like manipulate extra speed, we
+[1:13:33] can like walk on our feet. So that's
+[1:13:36] people what you are also obsessed with
+[1:13:38] humanoids. Um, but I think
+[1:13:40] long problem that's been overlooked but
+[1:13:43] is like coming back at this point
+[1:13:45] is intelligence is also defined by what
+[1:13:48] kind of tools um, like create for our
+[1:13:51] agent can use.
+[1:13:52] So biologists have described this sort
+[1:13:56] of like a ladder. So
+[1:13:58] the first stage is to use the tool. Um,
+[1:14:01] for example, like the chimpanzee can
+[1:14:04] like use this little like leaves to
+[1:14:07] eat the ants.
+[1:14:09] Um, sorry, I love these like biology
+[1:14:11] like analogies, so bear with me. Um, and
+[1:14:14] the second stage is sort of making a
+[1:14:17] tool. So for example,
+[1:14:19] there's this one example like um,
+[1:14:23] uh, a crow can sort of bend a wire into
+[1:14:27] a hook to use it to
+[1:14:29] lift something out of out of a tube. So
+[1:14:32] this is like sort of making a tool into
+[1:14:35] a U shape.
+[1:14:36] And the third stage is I think what
+[1:14:39] humans are unusually good at and it's
+[1:14:41] also like unique to human is sort of
+[1:14:44] this self-improvement loop.
+[1:14:46] So we use tools to make better tools and
+[1:14:49] we pass them on. So for example, like
+[1:14:52] people use these hammer stones to shape
+[1:14:54] an axe and when you die you can
+[1:14:57] pass your
+[1:14:59] axe to your son and like this gets like
+[1:15:02] continued reused and improved.
+[1:15:06] Um,
+[1:15:07] so what happens if we like put this
+[1:15:10] ladder on a real robot is
+[1:15:14] I think all this all of us in this
+[1:15:17] workshop are concerned. So I think the
+[1:15:19] workshop asked a really good question
+[1:15:21] like what changes when the agent must
+[1:15:23] sort of reason act and recover itself on
+[1:15:25] a real robot.
+[1:15:27] So in software agents can decompose
+[1:15:31] tasks, they can call tools, keep things
+[1:15:33] in memory, and revise their plans.
+[1:15:37] Um, so on the robot it's just sort of
+[1:15:38] the same loop.
+[1:15:39] The robot perceive, reason,
+[1:15:41] act, and then verify its action, and
+[1:15:44] then recover from failures.
+[1:15:47] However, this loop kind of run into
+[1:15:49] three hard constraints that we must
+[1:15:51] solve.
+[1:15:52] So, first of all, actions are
+[1:15:54] irreversible.
+[1:15:55] So, you cannot undo if you like drop a
+[1:15:57] glass onto the floor.
+[1:15:59] So, if you practice in simulation and uh
+[1:16:02] you need to practice in simulation and
+[1:16:04] verify before you commit to a solution.
+[1:16:07] Second is the observations are often
+[1:16:09] partial and noisy.
+[1:16:10] Um, so the agent has to sort look again
+[1:16:14] and like maybe zoom in to some parts
+[1:16:17] uh and remember what it has changed and
+[1:16:20] ask for help
+[1:16:22] uh when it cannot do something.
+[1:16:24] And the third one is the decisions need
+[1:16:26] to be real time. Um, and that um
+[1:16:30] if you look at Astro solving a task it
+[1:16:32] can like take two hours um
+[1:16:35] but um
+[1:16:36] we have to like deal with that problem
+[1:16:39] in a real environment.
+[1:16:45] So, let's start with the um first
+[1:16:48] problem. Um, it's a using tools. Um,
+[1:16:51] so here I would uh have
+[1:16:54] introduce uh our Gemini Robotics stack,
+[1:16:56] which is the agent that can plans and
+[1:16:58] call tools and also direct learn skills
+[1:17:01] in real time.
+[1:17:03] Um, here's the rough architecture. So,
+[1:17:05] if um a user says hey Apollo, my kid is
+[1:17:09] having sports today, could you help me
+[1:17:10] plan
+[1:17:12] the orchestrator, which is um
+[1:17:14] Gemini Robotics ER, embodied reasoning
+[1:17:16] model, would look at the sentence,
+[1:17:18] thinks
+[1:17:20] and call tools.
+[1:17:22] So, here um ER checks the calendar and
+[1:17:25] like finds a there's a baseball game at
+[1:17:27] 4:00. Um, so then plans the sequence of
+[1:17:30] steps.
+[1:17:31] Each of these steps goes into uh the VLA
+[1:17:34] model Gemini Robotics, which turns
+[1:17:36] language and pixels into this like motor
+[1:17:38] commands.
+[1:17:40] So, notice that from the orchestrator
+[1:17:42] point of view, the VLA is just another
+[1:17:44] tool. It's next to search, calendar,
+[1:17:47] code execution.
+[1:17:48] Um it is the tool that happens to move
+[1:17:50] the robot. But um we have the same model
+[1:17:54] running on like humanoids and like
+[1:17:56] bi-arm robots and the orchestrator can
+[1:17:59] even like coordinate several of these
+[1:18:00] robots at once.
+[1:18:03] Um so why do we do this like factor?
+[1:18:07] Um
+[1:18:10] so this is because each layer run at
+[1:18:12] different rates. Um the orchestrator
+[1:18:14] reasons on like say 1 Hz. Um so it talks
+[1:18:17] to the user at each of steps
+[1:18:19] and the VLA refines these trajectories
+[1:18:22] at about 5 Hz and emits like 50 Hz
+[1:18:25] actions.
+[1:18:26] And finally we have a low-level
+[1:18:28] controller that runs on the robot at 100
+[1:18:31] Hz.
+[1:18:32] Um
+[1:18:33] so this layer sort of helps with the
+[1:18:35] latency problems.
+[1:18:37] Um by the way don't read into the
+[1:18:38] numbers uh too much. A 95 Hz controller
+[1:18:41] could maybe work better.
+[1:18:43] Um these are just like rough numbers.
+[1:18:46] Um so this with this architecture we can
+[1:18:49] have like uh sinker that is slow and
+[1:18:51] expensive while the control stays fast
+[1:18:54] and reactive.
+[1:18:55] So this is how we handle the real-time
+[1:18:57] constraint. Sink slow and act fast.
+[1:19:01] Um so next I will talk about sort of the
+[1:19:04] tool at the bottom of this stack.
+[1:19:06] It just got an upgrade. So um
+[1:19:09] the
+[1:19:10] tool that orchestrator costs most is the
+[1:19:12] actor model.
+[1:19:13] And um Gemini Robotics 2.5 uh is our
+[1:19:17] most capable for VLA so far.
+[1:19:19] And we ran it on like over almost over
+[1:19:21] 200 tasks such as serving the food with
+[1:19:24] tongs or tying a bow on a gift box.
+[1:19:27] Um
+[1:19:28] against previous baselines its success
+[1:19:30] rate boost from like certainty to um
+[1:19:33] 100% higher uh depending on the type of
+[1:19:36] task.
+[1:19:37] And the task also like finishes to 20 to
+[1:19:40] 30 percent faster.
+[1:19:43] So I won't go deep into
+[1:19:45] how we train this model today, but
+[1:19:48] dexterity these dextrous tools like
+[1:19:50] matters for agents
+[1:19:52] because every skill in the action model
+[1:19:55] is one more tool that the orchestrator
+[1:19:57] can call. And eventually like if we can
+[1:20:00] make this more reliable it means there's
+[1:20:02] less failure to recover from.
+[1:20:06] So the action model is one of the tools
+[1:20:09] but the orchestrator itself
+[1:20:11] can also
+[1:20:13] be good at need to be good at other
+[1:20:15] things and call other tools.
+[1:20:17] First of all it needs to like understand
+[1:20:19] the physical world. So on the right we
+[1:20:21] have
+[1:20:22] sort of
+[1:20:23] precise spatial grounding that's very
+[1:20:26] important to generate these
+[1:20:28] goal or waypoints or target poses. And
+[1:20:31] on the left we have a physical we show
+[1:20:33] like this is the physical agent with
+[1:20:35] memory.
+[1:20:36] So if a person kind of rearranges the
+[1:20:38] table and tells the robot to put things
+[1:20:40] back the way they are with this sort of
+[1:20:43] decomposed paradigm we can
+[1:20:46] robot the kind of agent can remember
+[1:20:49] what it saw earlier and it's not only
+[1:20:52] reactive to the current frame. So it can
+[1:20:54] solve these like long horizon tasks with
+[1:20:57] memories.
+[1:20:59] You can also like
+[1:21:01] amazingly use this model on its own for
+[1:21:04] like any sort of perception of VQA
+[1:21:07] besides controlling a robot.
+[1:21:10] And
+[1:21:12] that's
+[1:21:13] more importantly I think
+[1:21:16] the
+[1:21:17] the agent the vision itself can also use
+[1:21:21] tools.
+[1:21:22] So I talked about like partial
+[1:21:24] observation before.
+[1:21:25] Here we show a challenging problem of of
+[1:21:28] like instrument reading. So
+[1:21:30] model needs to sort of
+[1:21:33] decides
+[1:21:34] precisely on this gauge what the reading
+[1:21:36] is.
+[1:21:37] So instead of reading this in one shot
+[1:21:40] the agentic system can take intermediate
+[1:21:42] steps like zooming to these small
+[1:21:45] numbers, and it can use like pointing
+[1:21:47] and code execution to measure the needle
+[1:21:49] against the tick marks and actually
+[1:21:51] compute the value, not just like
+[1:21:53] guessing it from one image.
+[1:22:01] Um so furthermore, orchestrator is not
+[1:22:03] just tied to one
+[1:22:05] robot embodiment.
+[1:22:07] So with Boston Dynamics, we brought this
+[1:22:09] model to spot. So it helps spot
+[1:22:12] understanding environment including the
+[1:22:15] read and gauge example
+[1:22:16] I showed before.
+[1:22:18] So it's very helpful for example for
+[1:22:20] facility inspection.
+[1:22:22] It also connects to Boston Dynamics
+[1:22:24] autonomy system to move around sort of
+[1:22:26] plan sequence of tasks. And
+[1:22:30] if you look at what sits below the
+[1:22:33] orchestrator here, it is not our VLA.
+[1:22:35] It's actually Boston Dynamics on
+[1:22:37] autonomy
+[1:22:39] stack. So we have the same agent but
+[1:22:42] different tool.
+[1:22:43] So this is very important. So the agent
+[1:22:47] yeah, agent not
+[1:22:49] care about like what kind of policy it
+[1:22:51] is calling
+[1:22:52] as long as
+[1:22:53] as the interface is clear.
+[1:22:56] So if one agent can call different
+[1:22:58] tools, why not we also let it run
+[1:23:00] different robots?
+[1:23:03] Let me see the video plays here.
+[1:23:08] Yeah.
+[1:23:10] Yeah, here it goes. So here
+[1:23:14] we all know that human can team up to
+[1:23:15] get things done faster or better.
+[1:23:18] So here the orchestrator also can
+[1:23:20] coordinate
+[1:23:22] two robots. So it breaks down a task
+[1:23:24] into sub tasks and sign them to a
+[1:23:26] humanoid,
+[1:23:28] a bipedal robot.
+[1:23:30] The orchestrator can also like track the
+[1:23:31] progress of the robot and replans as
+[1:23:34] each robot finishes.
+[1:23:36] So nobody has ever actually trained this
+[1:23:38] multi-robot behavior end-to-end.
+[1:23:41] It just like composed
+[1:23:43] at inference time on top of general
+[1:23:45] skills. So that that's the beauty of
+[1:23:47] like these tools, this agentic system.
+[1:23:52] So yeah, I think I've shown a lot of lab
+[1:23:54] demos. So the fifth actually worked in
+[1:23:58] the real world, for example on the
+[1:23:59] factory floor.
+[1:24:01] So with Aptronic and Mercedes, we ran a
+[1:24:04] proof of concept
+[1:24:06] active production lines in Hungary and
+[1:24:08] Germany. So here the task is kidding,
+[1:24:11] sorting parts from bulk bins into trays
+[1:24:15] sort of in the exact same exact order
+[1:24:17] which the vehicle
+[1:24:19] on the production line needs.
+[1:24:21] So here it's the running the same stack
+[1:24:24] as you've already seen. Gemini Robotics
+[1:24:26] ER keeps track of the workflow, what
+[1:24:28] happens, what has been placed and what
+[1:24:30] has what needs to come next. And the
+[1:24:32] Gemini Robotics 2.5 action model
+[1:24:34] controls the hands and arms that reaches
+[1:24:36] into the bin, pick up like sort of these
+[1:24:38] metal brackets and put them in the
+[1:24:40] container.
+[1:24:41] When something is off, the system
+[1:24:43] actually corrects for the gap.
+[1:24:45] And on this demo we reached about like
+[1:24:48] 96% success rate.
+[1:24:51] And
+[1:24:52] we actually got a compliment from
+[1:24:54] Aptronic CEO that the models improved
+[1:24:56] dramatically just in a few weeks of
+[1:24:58] time.
+[1:25:01] Yeah.
+[1:25:03] However, like in these factories, of
+[1:25:06] course the robot needs to start work
+[1:25:08] next to people. So important question is
+[1:25:11] also safety. So not only we ask what the
+[1:25:14] agent can do, but also what it should be
+[1:25:17] client to do.
+[1:25:20] So here
+[1:25:22] we are releasing this open source
+[1:25:24] benchmark, safety benchmark called
+[1:25:26] Asimov Jailbreak. So it has like
+[1:25:28] hundreds of prompts that disguise sort
+[1:25:31] of unsafe requests
+[1:25:32] across dozens of scenes.
+[1:25:35] So our newest
+[1:25:38] model like Gemini for Argon actually
+[1:25:40] resists 99.5%
+[1:25:43] of them.
+[1:25:45] So it's a really safe model that you can
+[1:25:47] use around humans.
+[1:25:52] All right. So I think I've talked about
+[1:25:55] the agent use
+[1:25:56] tools. So next, what about the agent
+[1:25:59] make its own tool?
+[1:26:07] So Gemini for organ is the newest like
+[1:26:10] model Gemini.
+[1:26:13] It is a general model like not sort of
+[1:26:15] robotics specific model, but it also is
+[1:26:18] a step change in physical understanding.
+[1:26:20] So here we show
+[1:26:22] state of the art results
+[1:26:24] ERQA, a benchmark of embodied reasoning
+[1:26:26] questions about like sort of 3D physical
+[1:26:29] scenes. It scored 87%
+[1:26:32] So for agents, the important part here
+[1:26:34] is like one model can sort of
+[1:26:36] work across the whole robotic stack.
+[1:26:45] Next, I will show some examples of how
+[1:26:47] ARVA can use organ to
+[1:26:50] help us make better robotics tools.
+[1:26:53] Here we can see the organ control a
+[1:26:54] single arm
+[1:26:56] in a zero shot fashion.
+[1:26:58] So the task here is sort of to set a
+[1:27:00] mug upright.
+[1:27:02] And it can sort of do
+[1:27:06] wrist camera calibration
+[1:27:09] and on each turn it writes like one
+[1:27:11] observation and one command code and
+[1:27:14] checks the new wrist image.
+[1:27:17] In effect, it
+[1:27:18] writes its own controller as it goes.
+[1:27:23] And more importantly, if your grasp
+[1:27:25] fails, the agent can actually look again
+[1:27:28] and recovers from the failure.
+[1:27:34] So I talked about the action
+[1:27:35] the problem of recovery, right? So for
+[1:27:38] sort of
+[1:27:42] risk here like
+[1:27:44] actions, you need to sort of practice in
+[1:27:46] simulation, verify before before you act
+[1:27:49] act. so
+[1:27:50] here we show such an example. So our
+[1:27:52] agent can control that
+[1:27:55] BD spot robot
+[1:27:58] sort of stepping on a foot pedal
+[1:28:00] trapping to throw away cans.
+[1:28:03] So before it touches the real pedal, it
+[1:28:05] actually can build these entire scene in
+[1:28:08] a
+[1:28:09] twin sort of a
+[1:28:11] environment, practice it before it's
+[1:28:15] actually executed in the real world. So
+[1:28:18] if you directly run this, it will
+[1:28:20] probably
+[1:28:21] just spot is a pretty heavy robot and
+[1:28:24] this
+[1:28:25] thing is pretty fragile, probably break
+[1:28:27] it.
+[1:28:28] But
+[1:28:29] this
+[1:28:30] new agentic system helps us sort of do
+[1:28:33] this practice
+[1:28:36] simulation first.
+[1:28:38] But that raises another question. So
+[1:28:40] where does the simulator come from?
+[1:28:44] And we can also do that with the same
+[1:28:46] model.
+[1:28:47] So the agent can help us build the
+[1:28:49] simulator itself.
+[1:28:51] So on the left we see that example
+[1:28:54] starting from a real tele teleoperation
+[1:28:57] episode.
+[1:28:58] And our agent can reconstruct a
+[1:29:01] that turns these object assets and
+[1:29:02] contacts until sort of simulate the
+[1:29:05] camera views and fingertip forces match
+[1:29:07] the real logs.
+[1:29:09] At the top right, we see another example
+[1:29:11] of converting egocentric human video.
+[1:29:16] And on the bottom it is another example
+[1:29:19] sort of
+[1:29:21] built from like this throwing examples.
+[1:29:25] So this is actually my favorite. So you
+[1:29:28] can see the input here is actually
+[1:29:31] scratch like kind of a scratch painting
+[1:29:33] of the problem. And the model can
+[1:29:36] actually read that and convert that into
+[1:29:39] as actual physical simulations. So if
+[1:29:42] you're imaginative, you can just turn
+[1:29:44] manga into
+[1:29:46] a simulator and train it.
+[1:29:53] So I'll just pass you with
+[1:29:55] more and more of these amazing like
+[1:29:57] making tool examples.
+[1:30:00] So here
+[1:30:01] the the model can
+[1:30:04] sort of converts one of our
+[1:30:07] demos from the first general robotic
+[1:30:10] release exactly folding this origami
+[1:30:12] fox.
+[1:30:14] It produces
+[1:30:16] sort of the time aligned
+[1:30:20] hierarchy for it. So
+[1:30:22] it can create this like automatic value
+[1:30:25] functions
+[1:30:27] and segment the task the
+[1:30:30] long episode into sub tasks.
+[1:30:33] And on the right we can see that the
+[1:30:36] model can also sort of create the
+[1:30:38] progress of the task by just watching a
+[1:30:40] video. So it can also use it as a value
+[1:30:44] function.
+[1:30:53] So you can see these models are amazing
+[1:30:54] at using tools and also making tools.
+[1:30:58] So next next step is with system in a
+[1:31:01] self-improvement.
+[1:31:05] The tool can now helps to improve the
+[1:31:07] tool making songs.
+[1:31:11] So these are two examples from the Argan
+[1:31:14] raw post robotics.
+[1:31:17] On the left we can see that from a
+[1:31:19] single photo of a real tabletop Argan
+[1:31:22] built a calibrated
+[1:31:24] so this is sort of the real tool sim
+[1:31:27] problem.
+[1:31:28] And
+[1:31:29] it defined
+[1:31:31] 77 like single arm and by manual task
+[1:31:35] and wrote a motion generator that
+[1:31:37] produces over 4,000 random randomized
+[1:31:40] episodes. Finally close the loop by fine
+[1:31:43] tuning sort of a generous
+[1:31:45] on that data and raised real robot
+[1:31:47] success on that specific task from 56 to
+[1:31:50] 75%
+[1:31:52] and also cut the completion time from 35
+[1:31:54] to 24 seven.
+[1:31:56] So you can see everything comes together
+[1:31:59] in a in a loop here.
+[1:32:02] On the right we can see a sort of a same
+[1:32:04] example from a small like SO 101 arm.
+[1:32:08] You can just take the real image, build
+[1:32:10] a simulated train,
+[1:32:12] improve
+[1:32:14] improve the policy by training this
+[1:32:15] image.
+[1:32:22] Okay. So
+[1:32:24] I guess these are you might think still
+[1:32:26] like small toy examples.
+[1:32:30] So what if I tell you the same loop also
+[1:32:33] happen at the same scale
+[1:32:35] of a model release.
+[1:32:37] So this is sort of the most
+[1:32:40] amazing thing I think about this
+[1:32:42] release.
+[1:32:43] If you look at our own release history,
+[1:32:45] the first Gemini Robotics model came out
+[1:32:47] in March 2025 and next one 1.5 followed
+[1:32:52] about 197 days later.
+[1:32:55] Gemini Robotics 2 took another 300 days.
+[1:32:58] But Gemini Robotics 2.5 comes only 103
+[1:33:02] days after that. It's our fastest
+[1:33:04] release
+[1:33:05] and
+[1:33:07] this is in large parts thanks to Gemini
+[1:33:10] for our skill ability to accelerate
+[1:33:12] robotic research.
+[1:33:15] So here the two loops help.
+[1:33:18] First we have sort of agentic real to
+[1:33:21] scene to real system.
+[1:33:23] So Argon look at that real camera scene,
+[1:33:25] build a digital twin and generate
+[1:33:26] thousands of very verified like practice
+[1:33:29] prompts.
+[1:33:30] So combine these with real
+[1:33:31] demonstrations, this helps the robot
+[1:33:33] generalize faster to new scenes and
+[1:33:34] objects.
+[1:33:36] And the second is agentic research. So
+[1:33:40] here we can also use Argon to watch
+[1:33:42] video of failures, propose hypothesis
+[1:33:44] for why the task failed and test the
+[1:33:46] best improvement.
+[1:33:49] In both in simulation and maybe also
+[1:33:51] directly on
+[1:33:52] on robots.
+[1:33:55] So we can already see this loop happen
+[1:33:59] on
+[1:34:00] very large scale. And I'm very excited
+[1:34:03] about the future.
+[1:34:06] Yeah.
+[1:34:08] So, um, I guess I don't have much time
+[1:34:11] but I really like the six open problems
+[1:34:13] that if you look at the workshop
+[1:34:15] website.
+[1:34:16] Um, so I'll probably skip over the slide
+[1:34:19] but this is something that I think the
+[1:34:22] community should all think about.
+[1:34:28] Um, yeah, I will close with a note.
+[1:34:31] Gemini Robotics ER is on
+[1:34:33] if you go AI Studio and
+[1:34:36] Gemini API.
+[1:34:37] Gemini for Argon is also available on AI
+[1:34:40] Studio and
+[1:34:42] Actually we just have a newer version
+[1:34:44] Carbon released two days ago and
+[1:34:47] a smaller model Hydrogen released
+[1:34:50] freshly today which will help
+[1:34:53] hopefully be much faster. Um, and Gemini
+[1:34:56] Robotics 2.5 is also rolling out to our
+[1:34:58] robotics partners and early access
+[1:35:00] through the trusted test
+[1:35:02] Um, and feel free to take a look at the
+[1:35:04] website for our latest update.
+[1:35:07] Thank you and I'll take any questions.
+[1:35:25] Um,
+[1:35:27] I don't think it's like either or.
+[1:35:30] So
+[1:35:32] sometimes like it actually depends on
+[1:35:34] the problem.
+[1:35:36] I wouldn't say you have like
+[1:35:38] one model that solves it all. That's the
+[1:35:39] that's the all the purpose of integrated
+[1:35:41] robotics
+[1:35:43] is you can have
+[1:35:45] a simple tool. You can also have complex
+[1:35:47] tools like
+[1:35:50] You can have a simple orchestrator but
+[1:35:52] you can also have like very complex
+[1:35:55] orchestrator that
+[1:35:57] does everything until the very last
+[1:36:00] so it's done.
+[1:36:01] So I think we should explore the
+[1:36:04] whole structure and eventually you will
+[1:36:08] depend on real world systems.
+[1:36:15] Due to time we
+[1:36:17] let's move on to the next speaker
+[1:36:19] please.
+[1:36:49] >> Yes thank you
+[1:36:50] and the next speaker
+[1:36:53] will be Jonathan
+[1:36:55] Chamlee who also be related to
+[1:36:58] Let's hear what he brings to us.
+[1:37:12] >> Cool so I'm Jonathan I'm going to talk a
+[1:37:14] little bit about
+[1:37:18] I I like to talk about my dad. I think
+[1:37:20] my dad is a great source of inspiration
+[1:37:22] for the work we do right?
+[1:37:25] Who has a dad that never said
+[1:37:28] I love you I'm proud of you son for what
+[1:37:31] you do.
+[1:37:32] So like all I want to hear I have all
+[1:37:34] these daddy issues at me
+[1:37:36] and I'm like dad please
+[1:37:38] just say it once.
+[1:37:41] But as a
+[1:37:43] as a
+[1:37:45] when I was younger no that never
+[1:37:47] recently so this is going to tie up to
+[1:37:49] the talk I'm working but I'll tell you a
+[1:37:50] story. So recently I was
+[1:37:53] I was working on my hardwood floor at
+[1:37:55] home so I just bought a house there's
+[1:37:56] hardwood floor and I like the carpet and
+[1:37:58] I want to remove the hardwood floor the
+[1:37:59] the carpet and I want to put some
+[1:38:00] hardwood floor some nice
+[1:38:03] You're going have about where this is
+[1:38:04] going, aren't you? Yes. Don't worry,
+[1:38:06] it's going very well.
+[1:38:08] So I worked like five days straight on
+[1:38:10] my hardwood flooring, banging and
+[1:38:11] knocking,
+[1:38:13] and I finished the job, called my dad, I
+[1:38:16] FaceTimed him and like, look at the
+[1:38:18] hardwood floor but like is this not
+[1:38:20] nice? He's like, yeah, yeah, it's fine.
+[1:38:23] And I said, oh, I got hurt a little bit,
+[1:38:24] like my hand is
+[1:38:26] is like squeaky, doesn't work really
+[1:38:28] well.
+[1:38:29] And then my dad's like, yeah, yeah,
+[1:38:31] that's normal, like you're you're not
+[1:38:32] really a manual person.
+[1:38:40] That's okay. Computer scientists are are
+[1:38:43] notorious for not liking laughing,
+[1:38:45] right?
+[1:38:47] Um, did we fix it or not?
+[1:38:52] Okay, just zoom, okay.
+[1:38:55] That's okay. Thank you so much guys for
+[1:38:58] great fix in it.
+[1:39:00] Uh no, I don't need education share.
+[1:39:02] Um
+[1:39:29] All right.
+[1:39:29] >> Approval, approval. Um
+[1:39:40] >> All right,
+[1:39:41] this is me now here, Jonathan.
+[1:39:43] Um
+[1:39:45] Why papa stress so good and what it
+[1:39:47] does, right? Oh why what I do.
+[1:39:50] Um this is the province of Quebec in
+[1:39:53] Canada. As you can see, it's a very cold
+[1:39:55] place. I'm from somewhere around here,
+[1:39:57] right? Very remote, not that many things
+[1:40:00] as you can see, very
+[1:40:02] the forest is
+[1:40:04] what the
+[1:40:05] Is this okay?
+[1:40:07] Yes?
+[1:40:08] >> I think it's all okay.
+[1:40:10] >> So, I'll continue talking. So, the
+[1:40:12] forest, as you can see, in a places that
+[1:40:14] are very remote and there's not that
+[1:40:16] many
+[1:40:17] like things to do, people tend to
+[1:40:19] overfill towards manual work. So, I
+[1:40:22] already talked about my hardwood floor
+[1:40:23] and it was very frail.
+[1:40:25] But in places like that, that's kind of
+[1:40:27] all you have to offer to society
+[1:40:29] is the manual work you can do. Right?
+[1:40:32] So, that is in French there's all these
+[1:40:33] expressions especially from there
+[1:40:36] he's strong with his hands, he's very
+[1:40:38] hardworking.
+[1:40:41] Right? So, here's my dad. I I told you I
+[1:40:44] was going to talk about my dad, no?
+[1:40:46] So, my dad he's a great manual worker as
+[1:40:48] you can see he's working in the garage
+[1:40:50] is very strong and and
+[1:40:53] you can probably imagine the
+[1:40:57] canyon that exists between him and and
+[1:40:59] him and I. All right? I am here speaking
+[1:41:03] to you. All right? I went to school. I
+[1:41:05] didn't really work with my aunt and here
+[1:41:08] he is. All right? So, back home there's
+[1:41:10] this expression
+[1:41:14] all talk, no action, all talk, no game.
+[1:41:16] Right? Right? I am not working with my
+[1:41:18] hands therefore I'm just talking and I'm
+[1:41:20] not doing anything. Like I want to prove
+[1:41:22] you wrong. All right? I want I want you
+[1:41:24] to be proud of me.
+[1:41:25] I downloaded all the CVPR abstracts from
+[1:41:28] the last like 10 years or so and I
+[1:41:30] looked for the word robot, robotics, and
+[1:41:33] body. This is going somewhere. Don't
+[1:41:34] worry guys.
+[1:41:35] I really like there's some some at the
+[1:41:37] front I'm really worried that big eyes.
+[1:41:40] Um
+[1:41:41] and all right, you can see like there's
+[1:41:42] an uphill uphill trend. Right? Right?
+[1:41:45] This this is pretty cool. Really good
+[1:41:46] for robotics. Right? But you can see
+[1:41:47] here there's something that happened.
+[1:41:49] Right? Clearly you saw something at the
+[1:41:51] beginning in the years of 2015 that was
+[1:41:54] very important. Started working in
+[1:41:56] robotics.
+[1:42:01] So,
+[1:42:02] so, I I know some of you went to school
+[1:42:05] also and then read some math papers and
+[1:42:09] don't tell my dad please.
+[1:42:12] So this all talk kind of no game also
+[1:42:16] got me thinking about in robotics when I
+[1:42:19] work on a demo, right?
+[1:42:21] You'll do a thousand tries to for one
+[1:42:24] cool demo and there's all these problems
+[1:42:27] with the robot.
+[1:42:29] And the problems with
+[1:42:32] that is people tend to believe it's on
+[1:42:34] the left hand side, right? They're like
+[1:42:35] oh this is a cool demo, all these
+[1:42:37] qualities, but there it's not really
+[1:42:39] well evaluated.
+[1:42:41] Right.
+[1:42:42] We came up in about a year ago we worked
+[1:42:45] on this paper Robo Lab was published at
+[1:42:47] RSS. There's 120 tasks to solve, they're
+[1:42:50] meant to be general. You train on real
+[1:42:52] world training data, you test in
+[1:42:54] simulation, there's a leaderboard and
+[1:42:56] there's a general these are kind of
+[1:42:57] general scene understanding questions,
+[1:42:59] right?
+[1:43:01] This is using a simulator by the way.
+[1:43:02] This is a simulator. It looks a little
+[1:43:04] bit like this.
+[1:43:06] The sort of tasks you have to solve. So
+[1:43:07] the idea for us was
+[1:43:09] these VLA's are all talk no game, right?
+[1:43:12] They can't work. Let's go figuring out
+[1:43:15] if we can measure that. So we got 505 at
+[1:43:18] 28% success rate on it. That's our best
+[1:43:20] scoring this is happening in the spring
+[1:43:22] of 2026 that kind of generate
+[1:43:25] But like okay cool we have like a hill
+[1:43:27] to climb.
+[1:43:28] So more recently with one of the
+[1:43:30] organizers C of this workshop
+[1:43:33] I started thinking about okay how can we
+[1:43:34] improve upon these results? How can we
+[1:43:37] harness
+[1:43:39] the
+[1:43:41] big models and their reasoning
+[1:43:42] capability in order to do
+[1:43:45] agentic robotics. So we're working on
+[1:43:47] this kind of very early in January. So
+[1:43:50] we are
+[1:43:52] this is kind of all news to you guys I'm
+[1:43:53] sure because Astra can do all of this
+[1:43:55] now, right? Why is it so good at what I
+[1:43:58] do?
+[1:44:00] There's our VLA, perception, action, the
+[1:44:03] models is deciding what it's going to
+[1:44:04] do. It's going to correct that sees
+[1:44:05] mistakes. So here's a little bit of an
+[1:44:07] example here.
+[1:44:10] Right like pick up the citrus, put it on
+[1:44:11] the cutting board, it picks up the
+[1:44:13] orange, it's confused, it's not the
+[1:44:15] right thing. The agent says, no, you go
+[1:44:17] pick something else. It picks the
+[1:44:19] citrus. Eventually it's going to find
+[1:44:21] the
+[1:44:22] tool like grasping and it's going to
+[1:44:23] move the grasp in the right place.
+[1:44:25] We're very happy. This is great success.
+[1:44:30] Robot is working. And then we tested and
+[1:44:34] we get
+[1:44:35] higher success rate than the 28% Yes.
+[1:44:40] It's written a little small, huh? Uh,
+[1:44:43] probably something a little wrong with
+[1:44:44] it, but it's small. But it's it's a
+[1:44:46] success. A hill to climb, that's what
+[1:44:48] we're doing. That's what we want to do.
+[1:44:49] We are in research.
+[1:44:52] Uh, Jenny, the first author of Robo Lab
+[1:44:54] went on when we got Astra and then wrote
+[1:44:57] this beautiful blog post of astronomy,
+[1:44:59] right? And she started looking into what
+[1:45:02] can Astra do that other things cannot do
+[1:45:05] and then designed different ways of
+[1:45:06] testing it like direct policy. I'm going
+[1:45:08] to go directly from
+[1:45:10] uh
+[1:45:11] model to action, model using tools to
+[1:45:13] action, model using tools to action, and
+[1:45:15] also maybe uh like a BLA type of policy
+[1:45:18] in the middle.
+[1:45:19] And the best model gets 275%.
+[1:45:23] This is crazy. Huge, huge, huge, huge,
+[1:45:26] huge improvement, right? We went from
+[1:45:30] 25 30% success rate in January and all
+[1:45:33] the way like a couple months later we
+[1:45:34] get to 75% and even higher. There's
+[1:45:36] another method that just came out of the
+[1:45:38] leaderboard that like 80 something
+[1:45:40] percent.
+[1:45:41] This is
+[1:45:42] fantastic. Something is happening,
+[1:45:44] right? Something is changing, something
+[1:45:46] is different. Something is kind of not
+[1:45:50] linearly increasing. There's like a big
+[1:45:52] jump.
+[1:45:54] Um,
+[1:45:55] don't know if a lot of you guys uh were
+[1:45:57] around for the natural language
+[1:46:00] which processing
+[1:46:01] thing
+[1:46:02] uh research or
+[1:46:04] like research, but this is a great
+[1:46:06] article. You should you should check it
+[1:46:08] out. It's called when ChatGPT broke an
+[1:46:10] entire field on oral history. And there
+[1:46:13] are so many interesting parallels with
+[1:46:15] robotics that I'd like to highlight a
+[1:46:17] few of those and then hopefully this
+[1:46:19] will help us like kind of look forward
+[1:46:20] into the future of the sort of work
+[1:46:22] robotics can be doing
+[1:46:24] uh and without without falling into some
+[1:46:26] of the traps.
+[1:46:28] So when Jacob worked on Attention Is All
+[1:46:30] You Need,
+[1:46:31] uh he wrote a paper,
+[1:46:33] he went to Google in New York, did this
+[1:46:35] great presentation where he talked to
+[1:46:37] all the researchers and he's like, look
+[1:46:39] at my method. We didn't care about all
+[1:46:41] of the NLP stuff you guys were doing. We
+[1:46:43] just took data and we did a hack.
+[1:46:46] All right? He's just very arrogant that
+[1:46:48] this this is just all a hack.
+[1:46:50] And in this process
+[1:46:53] uh solved a lot of the natural language
+[1:46:55] processing problems, NLP problems.
+[1:46:58] So from this perspective from Professor
+[1:47:00] uh Pavlick,
+[1:47:01] uh she was a little kind of frustrated.
+[1:47:04] Recently this summer I had a friend of
+[1:47:06] mine at a Q&A with Entropic and
+[1:47:08] something kind of very similar happened.
+[1:47:09] She asked the speaker, hey, do you think
+[1:47:13] we could
+[1:47:14] do you think robotics is any different?
+[1:47:16] Is there something special about
+[1:47:18] physical AI? Are you guys going to be
+[1:47:19] able to solve it? Right? Am I special?
+[1:47:22] Oh no, that's that's the question
+[1:47:24] they're asking every time.
+[1:47:26] Entropic Q&A and then the guy just said,
+[1:47:29] we don't see any problems in just
+[1:47:31] scaling the data and and solving the
+[1:47:33] problem of physical intelligence. So
+[1:47:35] there are no differences. And when she
+[1:47:37] told me that I was like, eh, come on.
+[1:47:39] Like robots are hard. I know they're
+[1:47:41] hard because I work with robots.
+[1:47:43] But the these results from Astra are are
+[1:47:46] are very astonishing.
+[1:47:49] So let's continue the history of NLP,
+[1:47:53] right? So Attention Is All You Need,
+[1:47:55] before starting to scale data, they're
+[1:47:57] starting to scale
+[1:47:59] models and BERT comes along. BERT is
+[1:48:02] this great model and all of a sudden
+[1:48:06] it's it's solving things that people
+[1:48:08] couldn't solve before. Like it's working
+[1:48:10] on problems that used to take four years
+[1:48:12] to work on.
+[1:48:13] And people are now exchanging ideas
+[1:48:15] about BERT and in the lab meetings
+[1:48:18] people are just kind of like sharing
+[1:48:19] histories about BERT.
+[1:48:21] And
+[1:48:22] term comes out Bertology, right? Which
+[1:48:24] is the study of BERT. What are the kind
+[1:48:26] of activations we see when we ask it
+[1:48:28] this sort of questions? What is the best
+[1:48:30] way to organize its thoughts in order to
+[1:48:33] solve this problem?
+[1:48:34] This is that does that ring you a bell
+[1:48:37] with uh
+[1:48:38] what
+[1:48:39] we did?
+[1:48:40] Sorry.
+[1:48:42] There you go.
+[1:48:43] Sorry about that. Does it ring you a
+[1:48:44] little bit of a bell of what we just
+[1:48:46] talked about?
+[1:48:47] Bertology looks so much mostly to
+[1:48:51] astronomy than astrology as well.
+[1:48:54] This idea of API science kind of took on
+[1:48:57] to the NLP world. Right? People were
+[1:48:59] looking into inputs and outputs and we
+[1:49:02] are trying to over overfit this to
+[1:49:04] eventually kind of all the problems that
+[1:49:07] these older professors had
+[1:49:10] went into
+[1:49:11] kind of we're gone, we're solved. Um
+[1:49:14] sentiment analysis been one of them. So
+[1:49:17] I remember when I started uh
+[1:49:20] working at NVIDIA there was a lot of
+[1:49:22] stuff about sentiment analysis. Is this
+[1:49:24] text
+[1:49:25] positive or negative? Right? Let's let's
+[1:49:27] classify it and a lot of people worked
+[1:49:29] on it.
+[1:49:31] Um and then all of a sudden it's it's
+[1:49:32] just gone. There's there's no more
+[1:49:35] there's no more of that.
+[1:49:37] So today and I'm not an expert in NLP,
+[1:49:39] I'm trying to be kind of a little bit
+[1:49:41] inspired about where is the field today?
+[1:49:43] What is left for them?
+[1:49:44] So I took some notes this morning and
+[1:49:46] then um
+[1:49:48]  um sorry anyway. Uh
+[1:49:51] I made a typo and
+[1:49:53] uh it's supposed to be I was talking to
+[1:49:54] my wife I guess I was This is not AI
+[1:49:56] generated.
+[1:50:00] Text and images are
+[1:50:03] So the community is really looking at
+[1:50:04] that kind of data that is going in, what
+[1:50:06] can we do with the data going into this
+[1:50:08] LLM? And then on the other hand they're
+[1:50:11] looking at evaluation uh post training
+[1:50:13] and safety and it's kind of like where
+[1:50:15] the field is at.
+[1:50:17] All right.
+[1:50:19] In the end, they were they got hit by
+[1:50:22] the bitter lesson, right? So, there's a
+[1:50:24] lot of text, but the idea if you haven't
+[1:50:26] read this,
+[1:50:27] go read it. If you've read it,
+[1:50:29] go read it again. And then actually I
+[1:50:31] read this thing like every 6 months. It
+[1:50:33] really helps me like get grounded into
+[1:50:35] my work a little bit better at it.
+[1:50:37] Um general methods that leverage
+[1:50:39] computation are ultimately most
+[1:50:41] effective, right?
+[1:50:43] Um
+[1:50:45] what does that mean for us, roboticists?
+[1:50:47] Where are we going with this
+[1:50:50] as roboticists, right? So
+[1:50:52] I mean it sounds a little bit negative
+[1:50:54] like this whole story of NLP, right?
+[1:50:57] But there's something interesting. Like
+[1:50:59] this sentiment analysis problem being
+[1:51:01] gone means you get to worry about
+[1:51:04] alignment. You get to worry about bigger
+[1:51:06] questions. A lot of the small problems
+[1:51:08] that were very sticky
+[1:51:09] were kind of just gone. And then now you
+[1:51:11] can ask yourself bigger questions. I
+[1:51:13] think we're reaching that moment in
+[1:51:16] robotics, right?
+[1:51:17] Calibrating
+[1:51:19] a camera, uh doing real to sim,
+[1:51:22] doing uh
+[1:51:24] RL training at scale. A lot of like
+[1:51:26] little problems or big problems that
+[1:51:28] were very difficult to orchestrate are
+[1:51:29] becoming easier and easier and easier.
+[1:51:32] To me, I feel like we're getting out of
+[1:51:34] the forest. I mean we're in the forest,
+[1:51:36] very thick, we can't see anything. And
+[1:51:38] all of a sudden there's all these paths
+[1:51:39] in front of us that we can think about
+[1:51:41] or work on.
+[1:51:42] So
+[1:51:43] things that I am personally thinking
+[1:51:46] about that I believe where it's going to
+[1:51:47] be more or less saved from Astra
+[1:51:51] grabbing more
+[1:51:52] and more and more data, and how can we
+[1:51:54] help them also be more effective, right?
+[1:51:57] What are the problems we believe are are
+[1:51:59] the theme problems that we believe that
+[1:52:01] are going to be good?
+[1:52:02] Evaluation, that is pretty obvious. I
+[1:52:04] think Robo Lab was a good example of
+[1:52:05] that, but it's all like it's it's
+[1:52:08] already solved in quotation marks. So
+[1:52:10] what does that mean for us if evaluation
+[1:52:12] is solved? Uh
+[1:52:14] there are more evaluations to do, right?
+[1:52:16] Environments,
+[1:52:17] training environments,
+[1:52:19] And that we can work with, um, real or
+[1:52:22] sim.
+[1:52:24] And deployment.
+[1:52:26] How do you deploy your robot?
+[1:52:28] Ken, do you need to go?
+[1:52:30] >> Yeah, you can go. It's okay. Yeah, come
+[1:52:32] come come.
+[1:52:32] >> You know, actually, you don't have to.
+[1:52:34] No, no, it's okay.
+[1:52:35] >> I don't want to that's why I didn't want
+[1:52:36] to
+[1:52:36] >> I feel bad because I actually really
+[1:52:38] enjoyed what you said. Okay.
+[1:52:41] I never mentioned for some This is
+[1:52:44] I'm Jonathan Jonathan, by the way.
+[1:52:54] to run so I never talk after
+[1:52:56] so
+[1:52:58] Great man. I never met
+[1:53:00] You know, I get into these meetings at
+[1:53:01] NVIDIA and
+[1:53:03] the Isaac team is working on on this
+[1:53:05] project of Robo
+[1:53:08] Robo Arena and we work on Robo Lab.
+[1:53:09] They're very similar. But they're like,
+[1:53:11] no, but the lab at Ken Goldberg is going
+[1:53:13] to use Robo Arena. Like you need to come
+[1:53:16] help us build Robo Arena. So I'm very
+[1:53:18] happy I get to meet you finally. Like
+[1:53:20] Ken Goldberg, they've been talking about
+[1:53:22] for so many years.
+[1:53:23] All right.
+[1:53:25] I go back to deployment. What does it
+[1:53:27] mean to have the robot do something?
+[1:53:28] Like are we going to have a rack of
+[1:53:31] GB 300 in the corner in the factory? I
+[1:53:34] would love to as a shareholder. Please
+[1:53:35] go do buy racks and put them in a
+[1:53:38] warehouse where there's a lot of dust
+[1:53:40] and they break and then you have to buy
+[1:53:41] buy another one. But deployment is a
+[1:53:43] very important
+[1:53:45] So let's talk about some of these
+[1:53:47] problems at a high level.
+[1:53:51] In Robo Dojo, there's a task that says,
+[1:53:53] hey, build me a pyramid. It's very hard
+[1:53:55] to
+[1:53:56] right?
+[1:53:57] So then on the left hand side, there's a
+[1:53:59] pyramid. On the right hand side, there's
+[1:54:00] also a pyramid where both of them are
+[1:54:02] successful. Then my daughter, when she
+[1:54:04] was three, probably could do the one on
+[1:54:06] the on the right hand side and the left
+[1:54:08] hand side. Now she's 11, so she's very
+[1:54:10] strong, right? So she can probably do
+[1:54:12] even better. But this is how we're
+[1:54:13] currently thinking about evaluating
+[1:54:16] robots, right? We're giving them these
+[1:54:17] tasks that are
+[1:54:19] soft in a way. They're not precise.
+[1:54:22] We're not thinking about robots in the
+[1:54:23] way that we're thinking about adults. We
+[1:54:25] think about robots in the way that
+[1:54:26] they're like child, right? They're just
+[1:54:27] like putting things on the table. It's
+[1:54:29] very soft.
+[1:54:31] Whenever we start thinking about
+[1:54:32] precision, about construction, right? If
+[1:54:34] I give a robot a CAD model of what I
+[1:54:36] want the robot to do, if I give the
+[1:54:39] robot precise instructions with
+[1:54:41] millimeters precision,
+[1:54:43] I can I start
+[1:54:44] looking into is it capable of actually
+[1:54:47] putting
+[1:54:48] uh things in a way that I could weld
+[1:54:50] them together? Let's say I'm building a
+[1:54:52] bridge. I have all these like beautiful
+[1:54:54] pieces of metal, like iron beams, and I
+[1:54:57] need to weld them together.
+[1:54:59] And I have only a robot to do it, and
+[1:55:01] then the robot like does it in a way
+[1:55:03] that it build the pyramid. I I
+[1:55:05] Would you go on that bridge?
+[1:55:07] >> I don't think so.
+[1:55:09] >> So this is one of our Robo Builder that
+[1:55:12] we're looking into, uh a data set and an
+[1:55:15] evaluation platform for you guys to look
+[1:55:17] into precision based with the metrics or
+[1:55:19] about being precise and not about having
+[1:55:22] placed an object somewhere.
+[1:55:25] This looks a little bit like this
+[1:55:27] as uh
+[1:55:28] Oh, wait.
+[1:55:29] Slide
+[1:55:31] Slide the camera. So here's your task.
+[1:55:33] You're supposed to build this like
+[1:55:35] interesting thing with the pegs. You
+[1:55:37] have to insert them. So this one
+[1:55:39] uh because it's an insertion task, that
+[1:55:41] it seems like probably easy, but a long
+[1:55:43] ish horizon makes it quite hard for
+[1:55:45] Astra or any model to to actually
+[1:55:47] accomplish. So right now it's just kind
+[1:55:49] of a demonstration. But this is where
+[1:55:50] the fun begins because now there's just
+[1:55:52] these holes that needs to be aligned,
+[1:55:54] and then you don't really know where
+[1:55:55] they are, and then we have this like
+[1:55:56] little animation you can kind of
+[1:55:58] face the the the grabbing. You can 3D
+[1:56:01] print all these parts and have the robot
+[1:56:03] be capable of uh working on them. And
+[1:56:06] here you don't have any markers at all,
+[1:56:08] right? You're just placing them where
+[1:56:09] the language is telling you, which is
+[1:56:11] like 2.5 cm from each end, right? Kind
+[1:56:14] of centered. Uh this is very difficult,
+[1:56:17] but we don't have to
+[1:56:19] think robotics are building simple
+[1:56:21] things, right? They should be capable of
+[1:56:24] doing things that are very very
+[1:56:25] difficult and required a lot of
+[1:56:28] precision.
+[1:56:30] Environments are also
+[1:56:36] Uh
+[1:56:37] is is is really important, right? So if
+[1:56:39] I give you kind of a demo of someone
+[1:56:41] playing with a
+[1:56:42] a server rack and there's all these
+[1:56:44] tasks that the robot should be doing,
+[1:56:46] right?
+[1:56:47] I think at some cables if the cables are
+[1:56:49] being are correct or still alive or
+[1:56:51] managing, I think a simulated
+[1:56:52] environment where you start testing
+[1:56:54] these ideas is very important. Now this
+[1:56:56] is a first try with You can see there's
+[1:56:58] a lot more room to improve on the
+[1:57:00] result. There's a lot of room to improve
+[1:57:02] on alignment and I don't think
+[1:57:04] is going to save this. I think
+[1:57:05] technology needs to be built
+[1:57:06] specifically for this problem. This is a
+[1:57:08] very interesting problem. And you know
+[1:57:10] what? We can even benchmark this, right?
+[1:57:12] We can build an evaluation system that
+[1:57:14] will look into this problem from a first
+[1:57:16] principle.
+[1:57:19] And real world robot deployment, like I
+[1:57:23] kind of alluded to it earlier where you
+[1:57:25] don't necessarily want to have a rack.
+[1:57:27] So what does that mean to
+[1:57:29] to accomplish a task, but accomplish a
+[1:57:32] task precisely and to repeat, right? So
+[1:57:36] you want the task to be uh
+[1:57:38] not not like difficult and precise and
+[1:57:41] be able to continue doing it like
+[1:57:42] 99.99999%
+[1:57:44] of the time, right? This is not just
+[1:57:46] about replacing things
+[1:57:49] uh imprecisely.
+[1:57:51] All right. So real world deployment, we
+[1:57:54] can also benchmark this, right? We could
+[1:57:55] give
+[1:57:56] the models
+[1:57:59] uh let's say here's your budget of
+[1:58:00] compute for a policy that you're going
+[1:58:03] to have to run to flip parts. And here
+[1:58:05] are you're going to have three cameras.
+[1:58:07] They're going to be placed this way.
+[1:58:08] They're calibrated, not calibrated. Uh
+[1:58:11] and you train in
+[1:58:14] you test in for example, right? Two
+[1:58:15] different softwares that have two
+[1:58:17] different properties and that makes it
+[1:58:19] very difficult, right? So the this idea
+[1:58:21] of benchmarking, evaluating and
+[1:58:23] continuing uh moving forward.
+[1:58:26] All right.
+[1:58:28] Everybody is that for me to do? What
+[1:58:30] should I do it my life that my stress is
+[1:58:32] around?
+[1:58:35] That happens more often than you think,
+[1:58:36] that last one.
+[1:58:38] Cuz that's the that's my problem. It's
+[1:58:39] not your problem.
+[1:58:42] Recently I was
+[1:58:44] chatting with a good friend and I I
+[1:58:46] didn't ask him if I could share his name
+[1:58:47] or anything, so I just decided to
+[1:58:50] not put his name. But I I saw some
+[1:58:52] amazing results that he was sharing
+[1:58:54] about robotics and I was like, hey, this
+[1:58:56] is really cool. Like it's it's it's very
+[1:58:58] like how helpful was was our Robo Lab.
+[1:59:01] He was like, yeah, really helped. It
+[1:59:02] helped convincing everyone in the team,
+[1:59:05] even that DLA had a lot of limitation
+[1:59:08] and it allowed us to unlock continuing
+[1:59:10] moving forward with our methods, right,
+[1:59:12] methodology. This is a great moment
+[1:59:15] where we're at right now cuz we get to
+[1:59:17] define what is successful for robotics.
+[1:59:20] We get to plant the flag and be like,
+[1:59:22] hey guys,
+[1:59:23] robotics is successful. It's going to
+[1:59:25] have an impact on the market, right?
+[1:59:27] This is
+[1:59:29] where we are in control of that
+[1:59:30] narrative, right? We don't like no one's
+[1:59:32] going to tell us. We get to like define
+[1:59:34] it. And that's a very exciting moment to
+[1:59:36] me I find that
+[1:59:38] coming out of the woods and then being
+[1:59:40] able to define a marketplace for robots
+[1:59:42] and define a a
+[1:59:44] a business model for robots is is very
+[1:59:47] very exciting. It's been like so many
+[1:59:49] years of hard work in robotics and
+[1:59:50] seeing that finally we're getting to
+[1:59:52] this point where we can define what is
+[1:59:55] valuable and what is successful.
+[1:59:58] And then my dad now
+[2:00:00] he he's he's retired and like this is
+[2:00:03] just kind of like
+[2:00:04] the last thoughts I want to share with
+[2:00:05] you.
+[2:00:06] He's retired. He he likes to drive
+[2:00:09] around his little boat on the lake and
+[2:00:11] all of a sudden being manual is is not
+[2:00:14] as as important as it was cuz now he he
+[2:00:16] likes to find little streams, right? He
+[2:00:18] likes to explore and then he finds a
+[2:00:20] stream and he starts to
+[2:00:22] he gathers water and he looks at the
+[2:00:24] waters drinkable or not. He's he's being
+[2:00:26] curious, right? And I think where
+[2:00:29] these these agentic models is that's
+[2:00:31] what it's kind of offering us, right?
+[2:00:33] It's offering us the chance to be
+[2:00:35] curious. The chance to be curious for me
+[2:00:38] to fix the the the cane on my on my
+[2:00:42] chair and become a little bit more
+[2:00:44] manual worker, right? I'm a little bit
+[2:00:46] more curious towards something that I
+[2:00:48] wouldn't have time or thought that this
+[2:00:49] was kind of silly
+[2:00:51] to work on, but now I'm enjoying it. And
+[2:00:54] uh I have a I have some time. I I want
+[2:00:56] to finish on on a story of my daughter,
+[2:00:59] like being curious and and
+[2:01:01] and being uh creative. I think these are
+[2:01:05] two things that are really fun. And then
+[2:01:07] even we have kids at the front so
+[2:01:08] maybe hopefully you guys enjoy it. Uh so
+[2:01:12] recently I'm sitting at a coffee shop
+[2:01:14] with my friend.
+[2:01:16] Uh he's a psychologist and I'm like, you
+[2:01:17] know what?
+[2:01:18] This is hard. My daughter keeps yelling
+[2:01:21] at me and it's it's very
+[2:01:24] difficult, like a lot of anger towards
+[2:01:25] she's she's 12, right? She's right the
+[2:01:27] sweet spot like where things are
+[2:01:29] starting to be interesting in the house.
+[2:01:31] My daughter frustrated yells at me. They
+[2:01:33] they've like Jonathan,
+[2:01:36] what I'm seeing right now is a good dad.
+[2:01:38] You are offering her a safe space so she
+[2:01:41] can express herself safely in front of
+[2:01:44] you because she knows she's safe.
+[2:01:46] So nice. You're so nice. Right that I
+[2:01:49] had like these like little
+[2:01:51] little models tearing up. So the next
+[2:01:53] day I'm cooking her potatoes in the pan
+[2:01:56] and I don't know we need to go on the
+[2:01:58] stereo because this is the moment of the
+[2:02:00] morning and I come back to the potatoes
+[2:02:01] they're a little burnt.
+[2:02:04] Why are they burnt?
+[2:02:07] She just started yelling at me. I'm
+[2:02:08] like, all right all right I'm I'm going
+[2:02:10] to be creative here.
+[2:02:12] Ellie I am so happy to offer you a safe
+[2:02:15] space where you get to express yourself
+[2:02:17] fully.
+[2:02:19] And she's like
+[2:02:21] what just happened? What? So she she she
+[2:02:24] she resettles. She's like, okay fine
+[2:02:26] potatoes. Um
+[2:02:28] and without it it it fires back.
+[2:02:30] The next morning I'm uh
+[2:02:33] I I don't know. We're in the house.
+[2:02:34] Something happens uh and she starts
+[2:02:36] yelling at me. And I'm getting, I didn't
+[2:02:38] get my coffee. Right? So, I'm like a
+[2:02:39] little on on the edge. And because I'm
+[2:02:41] on the edge, I'm also getting a little
+[2:02:43] frustrated. And then and then she looks
+[2:02:45] at me and she's like, you know what?
+[2:02:46] This is what you get to give me a safe
+[2:02:48] space to express myself.
+[2:02:51] You got it? So, she she
+[2:02:59] All right guys, thank you so much for
+[2:03:01] your time.
+[2:03:06] >> Any questions from the audience?
+[2:03:24] >> Thank you guys.
+[2:03:25] >> Thanks so much. Have a great one.
+[2:03:26] >> Let's give it a big round of applause to
+[2:03:28] Jonathan.
+[2:03:32] Next we have Tian Yu Ni from Dexai.
+[2:03:35] And uh he will share some um
+[2:03:38] takes on an anatomy
+[2:03:40] of coding agents tackling robotics
+[2:03:43] tasks. Please welcome.
+[2:05:59] >> I'll take
+[2:06:01] I'll take that back
+[2:06:06] I'll take that back
+[2:06:08] All right. I'll take that back
+[2:06:12] Thank you so much.
+[2:06:14] Coming down on your right.
+[2:06:16] Coming down on your right.
+[2:06:18] Thank you.
+[2:06:31] And I'll take your
+[2:06:34] Thank you.
+[2:06:36] Thank you.
+[2:07:39] >> Let's give a big round of applause to
+[2:07:41] Tianyu.
+[2:07:49] >> Today I will share what we learned from
+[2:07:51] letting a coding agent control a
+[2:07:53] real-world robot and how we how we learn
+[2:07:57] to shape our AI native robot system.
+[2:08:01] So coding agent is quite powerful. It
+[2:08:03] can already already tackle robotic
+[2:08:05] tasks.
+[2:08:06] It will simply ask Claude Code to open
+[2:08:09] the door and enter the room.
+[2:08:11] And without any door detection or
+[2:08:13] planner, it uses camera and robot
+[2:08:16] feedback to find a handle, open the
+[2:08:18] door, and drive it.
+[2:08:25] Uh but this agent can also be quite
+[2:08:26] paralyzed.
+[2:08:28] Uh they sometimes think
+[2:08:30] over a minute
+[2:08:31] uh just before moving, and collide with
+[2:08:34] the environment or missing precise
+[2:08:37] placement.
+[2:08:38] So basically we want to look into what's
+[2:08:41] actually happened behind the coding
+[2:08:43] agent. How coding agent tackle this
+[2:08:46] robotic task.
+[2:08:48] So basically we conduct a task that took
+[2:08:51] Kuka with
+[2:08:52] 5.5 and Kortex with 56 Astra
+[2:08:57] over three tasks. One is putting the
+[2:08:59] fruit in a basket which is a simple
+[2:09:01] table top task.
+[2:09:02] And the second one is a precise
+[2:09:06] table top task which we want the robot
+[2:09:09] to place the ball on the rack and place
+[2:09:11] it back. And the third is a
+[2:09:14] mobile manipulation task where we want
+[2:09:17] the robot to get into the door.
+[2:09:21] The agent controls the robot to very
+[2:09:23] basic empty tools and every motion goes
+[2:09:27] to our control service.
+[2:09:30] And in our experiment we consider two
+[2:09:32] parts of the agent state. The first is
+[2:09:35] the learning stage where the agent see
+[2:09:38] the task first time.
+[2:09:42] Solve the task and write skills.
+[2:09:45] And then enter the second stage. We
+[2:09:48] start a new session.
+[2:09:50] The agent has no previous contact
+[2:09:53] with
+[2:09:54] but the extra is
+[2:09:55] it can read the skill that written by
+[2:09:58] the previous learning stage.
+[2:10:02] And here is the overview of the result.
+[2:10:05] We can see both
+[2:10:06] Kuka and Kortex actually
+[2:10:09] finish every fruit and the door open
+[2:10:12] trial. But neither of them solved the
+[2:10:15] bolt rack task
+[2:10:16] which needs more precise
+[2:10:18] contact.
+[2:10:20] And for learning a task it takes several
+[2:10:23] minutes which is fine because learning
+[2:10:25] task
+[2:10:26] happens only one time. But the problem
+[2:10:29] is more about the execution
+[2:10:31] which you pay for every time.
+[2:10:36] And it's also if we do a simple
+[2:10:40] calculation for cleaning a table which
+[2:10:43] with objects, it can takes okay close
+[2:10:46] close to an hour. And for us can takes
+[2:10:51] several hours with like close to 100
+[2:10:53] bucks which is kind of unacceptable.
+[2:10:58] Inside around the agent works in a loop.
+[2:11:00] You know, observe the camera image,
+[2:11:03] think about what to do next and act.
+[2:11:07] When the move doesn't reach its target,
+[2:11:08] it just
+[2:11:09] go check it or verify and think about
+[2:11:12] the next step. Or if it reaches the
+[2:11:14] target, then it thinks what
+[2:11:17] think about what should I do next.
+[2:11:20] But the question is where does the time
+[2:11:21] go?
+[2:11:24] The answer is that the robot moving only
+[2:11:26] takes very small part of the time and
+[2:11:29] most of the is rest goes to the modeling
+[2:11:31] thinking and reasoning between the
+[2:11:34] action steps.
+[2:11:37] So we find that most of that thinking
+[2:11:39] and with deciding the next action and
+[2:11:42] the rest go to rechecking
+[2:11:44] the result, running geometry code and
+[2:11:47] decide to wait.
+[2:11:49] So basically the time is and the piece
+[2:11:52] is set by the model thinking not by the
+[2:11:54] robot action.
+[2:11:57] Here is one of the example.
+[2:12:00] With the hand already above the basket,
+[2:12:03] the agent tries the size,
+[2:12:06] feed the basket rim and prop the image
+[2:12:09] again. And after more than two minutes,
+[2:12:12] eventually asks it to do a small
+[2:12:14] correction with a
+[2:12:16] few centimeters.
+[2:12:24] And the model is just thinking thinking
+[2:12:25] thinking.
+[2:12:29] Yeah, eventually they move on a small
+[2:12:31] step
+[2:12:34] And a waiting also waste time because
+[2:12:38] when agent
+[2:12:40] run a robot action it actually call a
+[2:12:43] sleep
+[2:12:44] And
+[2:12:46] the agent often three keeps waiting
+[2:12:48] after the motion has already done.
+[2:12:54] Um
+[2:12:55] during the learning state the agent will
+[2:12:57] and state their own uh tools like
+[2:13:00] geometry
+[2:13:01] the planner and skill files.
+[2:13:03] Uh the
+[2:13:04] but the model still makes uh
+[2:13:06] the key decision uh like how to make
+[2:13:09] contact, where to make contact, how to
+[2:13:12] the model react to the feedback.
+[2:13:14] And of
+[2:13:15] for example when refining with the
+[2:13:18] filling you find uh
+[2:13:20] it it decide to find the basket again
+[2:13:23] from a new image.
+[2:13:26] Uh reusing the state skill that saves
+[2:13:28] time.
+[2:13:30] But uh
+[2:13:31] but the model still needs a lot of
+[2:13:33] refreshing in which cause like say uh
+[2:13:36] Astra only saved 10% of the time.
+[2:13:41] Uh
+[2:13:42] this judgment matters most for safety.
+[2:13:45] Here the agent um
+[2:13:47] the the agent noticed that there is
+[2:13:49] force on the arm and this is
+[2:13:52] retract.
+[2:13:53] But since the model
+[2:13:54] goes through a very deep sinking and it
+[2:13:57] retracts almost a minute later.
+[2:14:03] We also saw unnoticed table contact
+[2:14:07] pulling less door as to a progress.
+[2:14:10] and collision where the operator has to
+[2:14:12] stop the robot.
+[2:14:14] Uh in all of these cases the model still
+[2:14:16] think the motion has complete but uh
+[2:14:20] the task success actually kind of not
+[2:14:23] very aligned with the robot safety.
+[2:14:27] Uh in an extreme scenario we will even
+[2:14:29] see that the agent send uh
+[2:14:31] send the angle in degree where the tool
+[2:14:34] expected radius.
+[2:14:35] And on the robot that small unit mistake
+[2:14:37] make a rotation like uh almost 60 times
+[2:14:41] larger than intended.
+[2:14:46] So to sum up the agent
+[2:14:49] or runs an observation sink and act to
+[2:14:52] spend most of this time thinking, keep
+[2:14:55] key judgment
+[2:14:56] and coming
+[2:14:58] even when it's
+[2:15:00] it's the risk.
+[2:15:03] So we ask if we can help help the model
+[2:15:09] help
+[2:15:10] help the model with two things.
+[2:15:12] First is given the
+[2:15:14] the agent more robotics tools and second
+[2:15:16] is
+[2:15:17] to let it rehearse in the simulation.
+[2:15:22] So originally the agent only has the
+[2:15:24] basic tool like to move, to look and to
+[2:15:27] grip.
+[2:15:29] We given several new tools like
+[2:15:32] adding sensory based segmentation,
+[2:15:35] reachable pose search, waypoint
+[2:15:37] collection
+[2:15:38] collision check
+[2:15:40] and the whole body motion planner.
+[2:15:44] So kind of our surprise, the extra tool
+[2:15:47] didn't help as much as we expected.
+[2:15:50] The extra success rate even dropped
+[2:15:53] and the successful runs become slower
+[2:15:56] and more expensive than the previous
+[2:15:57] one.
+[2:15:59] And we check the agent the model
+[2:16:02] actually
+[2:16:04] used we provide tool almost every time.
+[2:16:07] So what happens when this to the failure
+[2:16:10] and more
+[2:16:11] more cost.
+[2:16:13] So basically we find that the time just
+[2:16:15] moved with more tools the agent spend
+[2:16:18] much more time checking the query,
+[2:16:21] adding
+[2:16:22] so adding tool doesn't remove the work,
+[2:16:24] it moves
+[2:16:26] somewhere
+[2:16:27] to somewhere else. Tool helps if the
+[2:16:31] only if the result lead to the
+[2:16:33] into the next decision.
+[2:16:35] And I think that's an engineering
+[2:16:37] problem
+[2:16:38] and
+[2:16:39] it's like how we can package tools into
+[2:16:41] the skill so the agent can trust the
+[2:16:43] skill and to can rely on it.
+[2:16:48] In the second experiment we try try to
+[2:16:51] infer that the agent computer simulation
+[2:16:53] to tackle the task.
+[2:16:55] And
+[2:16:59] so for all three tasks we access uh
+[2:17:02] the
+[2:17:03] the agent to build a simulation, but for
+[2:17:05] the fruit and door entering task the
+[2:17:08] agent actually refused to build a
+[2:17:10] simulation
+[2:17:11] because I find the task is or the task
+[2:17:14] is too silly I can handle myself.
+[2:17:19] Uh yeah very self-confident uh most and
+[2:17:23] but for this task they all know that
+[2:17:24] okay this is a really hard task I should
+[2:17:27] build a simulation.
+[2:17:28] And building a simulation is actually
+[2:17:31] the agent build the scene by gathering
+[2:17:33] depth the image
+[2:17:35] and
+[2:17:36] but for every contact for contact like
+[2:17:39] mass and friction they just guess the
+[2:17:41] weight based on their pure knowledge.
+[2:17:44] And I think when building a simulation
+[2:17:46] the agent care more about the
+[2:17:48] physics alignment rather than the photo
+[2:17:51] realistic. So it's kind of
+[2:17:55] rely on more of the efficient spending
+[2:17:57] too much token on the on on the like
+[2:17:59] textures.
+[2:18:02] Uh
+[2:18:04] in this once the simulation is built it
+[2:18:06] can start to reverse itself and try to
+[2:18:08] gradually
+[2:18:10] improve its policy to strategy to like
+[2:18:14] say grasping the the ball.
+[2:18:19] And
+[2:18:21] after a long time of trying it switched
+[2:18:23] to the correct one.
+[2:18:24] And
+[2:18:27] they actually
+[2:18:28] they decide to move on to the real
+[2:18:30] robot.
+[2:18:32] Uh
+[2:18:33] on the real robot the same
+[2:18:35] the same strategy works
+[2:18:36] and the robot lifts the ball and place
+[2:18:38] on the rack.
+[2:18:39] Uh but getting this
+[2:18:41] tools most of an hour in simulation for
+[2:18:44] a couple
+[2:18:45] and only a couple of minute
+[2:18:47] on the real robot.
+[2:18:48] And only 23% of the experiment actually
+[2:18:53] uh actually works.
+[2:18:56] Uh
+[2:18:57] so
+[2:18:58] coding agent can really do several
+[2:19:00] Uh but three issues still remain.
+[2:19:03] Uh time, safety, and motor skill.
+[2:19:05] Uh so let me compare each
+[2:19:09] one quickly with the code the coding
+[2:19:11] environment.
+[2:19:12] Uh first is time. Here one call to to a
+[2:19:15] large model takes few seconds.
+[2:19:17] But uh in our
+[2:19:19] and a full agent loop where the agent
+[2:19:22] read read
+[2:19:24] the image, sync, and react uh took even
+[2:19:28] longer.
+[2:19:29] So the robot only get a new command like
+[2:19:31] every
+[2:19:33] uh
+[2:19:34] every several second.
+[2:19:36] Uh otherwise is like the robotics policy
+[2:19:38] people who actually run the robots which
+[2:19:40] update many times per second.
+[2:19:43] So the model that can reason about this
+[2:19:44] thing uh are all order of magnitude of
+[2:19:47] slow.
+[2:19:49] But uh
+[2:19:50] for coding task we can wait and uh we
+[2:19:53] can drink a coffee during the when the
+[2:19:56] agent is coding. But for a robot
+[2:19:59] world uh the world is keep moving. Uh
+[2:20:04] we cannot kind of endure such a long
+[2:20:07] wait.
+[2:20:09] Second is safety. Uh the coding agent
+[2:20:11] can make me safe. You can simply revert
+[2:20:14] it. You won't damage your life. Uh
+[2:20:17] but for robot it has no undo. Remember
+[2:20:20] uh remember the work pushing example.
+[2:20:22] But the agent already know the high
+[2:20:24] forces but keep pushing.
+[2:20:26] Um
+[2:20:27] so in a real world scenario where safety
+[2:20:30] really matters the stop must happen with
+[2:20:32] the immediate second uh without waiting
+[2:20:34] the model.
+[2:20:37] Um
+[2:20:38] thirdly is the motor skill.
+[2:20:40] Uh a coding agent has precise building
+[2:20:42] blocks. It can read
+[2:20:44] log and write
+[2:20:45] files. But for robot skill it's a
+[2:20:47] continuous like contact bridge.
+[2:20:50] Um many few of them are mature yet for
+[2:20:53] real world application.
+[2:20:56] So uh
+[2:20:58] when I
+[2:20:59] open
+[2:21:00] a stop is now what we can do a large
+[2:21:03] model alone is not enough. So for
+[2:21:06] robotics people what we want to do is
+[2:21:09] doing AI native robot system.
+[2:21:12] For AI
+[2:21:13] AI native robot system I mean we want to
+[2:21:16] build a robotic system to support the
+[2:21:18] large
+[2:21:19] so that the entire robot agent the model
+[2:21:21] together along with the system can drive
+[2:21:24] the robot to finish tasks in a reliable
+[2:21:27] and efficient way.
+[2:21:30] So this is a system we are kind of
+[2:21:32] developing architecture to support the
+[2:21:34] large model.
+[2:21:35] In the cloud
+[2:21:37] the is the
+[2:21:39] and is a agent system is a large model
+[2:21:42] at its core and
+[2:21:44] and harness around memory context task
+[2:21:47] tracking and it turns the user task into
+[2:21:50] a plan and sub tasks
+[2:21:52] in less than like 0.5 h.
+[2:21:58] Well on a device
+[2:22:00] task execution running turns each sub
+[2:22:02] task into motor skill command
+[2:22:04] at 1 to 2 h.
+[2:22:06] For example for
+[2:22:07] motion planner
+[2:22:10] navigation planner
+[2:22:13] Also there are going to be a sub task
+[2:22:15] monitoring track the progress
+[2:22:18] to decide okay the task is finished or
+[2:22:21] it it needs some change of the skill.
+[2:22:25] Below it is a primitive skill level
+[2:22:28] which some small code tasks such as
+[2:22:30] motion tracking at 20 to 100 h.
+[2:22:34] And underneath that there is going to be
+[2:22:36] a robot service
+[2:22:38] keeps hardware safe with collision
+[2:22:40] avoidance
+[2:22:42] local motion planning running at 212
+[2:22:45] 1000 h.
+[2:22:48] We have already studied part of the
+[2:22:52] AI native system.
+[2:22:56] Our most recent work we studied the
+[2:22:59] memory system of the embodied agent.
+[2:23:01] So,
+[2:23:03] we kind of provide a benchmark to
+[2:23:06] to benchmark different representations
+[2:23:08] to building the embodied
+[2:23:09] embodied agent memory system.
+[2:23:12] In this benchmark, we kind of ask the
+[2:23:15] robot to see things happen before it
+[2:23:17] knows the question.
+[2:23:19] This
+[2:23:20] very realistic scenario because
+[2:23:23] we kind of
+[2:23:26] home so
+[2:23:27] thanks we just
+[2:23:30] ask ourselves a task like where's my
+[2:23:32] phone and then it's like
+[2:23:35] you observe the world before you
+[2:23:36] actually know the question.
+[2:23:38] Here it's like
+[2:23:41] when we
+[2:23:42] like moving a lemon and later we ask for
+[2:23:46] ask about the apple that's sitting next
+[2:23:47] to the lemon. We found that saving
+[2:23:50] camera frame gave a clearer and higher
+[2:23:52] success rate
+[2:23:54] than saving text description because
+[2:23:58] basically it makes much sense because
+[2:24:00] more information are retained.
+[2:24:02] But we also find that a scene graph
+[2:24:04] helps the large model to understand the
+[2:24:06] image better, but the scene graph itself
+[2:24:08] does not help the large model as much as
+[2:24:10] the image.
+[2:24:12] And another surprising
+[2:24:15] finding is that saving image actually
+[2:24:17] saving cost.
+[2:24:18] The image makes the input larger. Yeah,
+[2:24:20] the input cost becomes larger, but with
+[2:24:23] more information the model need need
+[2:24:26] much less reasoning and thinking steps
+[2:24:29] to answer the question.
+[2:24:30] So the task
+[2:24:33] so the cost of per successful request
+[2:24:35] goes down
+[2:24:36] and the frame are also cheap to write
+[2:24:39] than describe.
+[2:24:43] In the second part, we also studied
+[2:24:46] conduct a research about task tracking
+[2:24:49] which we decide when the task is done.
+[2:24:52] Basically when we run run robot lab
+[2:24:54] experiment with the Pi Zero on fire, we
+[2:24:57] found that
+[2:24:58] if we simply run Pi Zero Pi without
+[2:25:00] cutting it off, it just keep continue
+[2:25:03] running and running. It doesn't have the
+[2:25:05] sense of, oh, my task is finished.
+[2:25:12] Yeah, you can see although the task is
+[2:25:13] finished, the robot still moving and
+[2:25:15] kind of I go back to the car and yeah.
+[2:25:20] Keep something in our loop.
+[2:25:24] And so we kind of test how well current
+[2:25:26] model can judge completion. Uh the best
+[2:25:29] one was the most of
+[2:25:31] the best one
+[2:25:33] is the best one takes
+[2:25:35] uh most of the time but uh
+[2:25:38] checking checking such kind of uh
+[2:25:42] tasks
+[2:25:43] uh with high frequency is very
+[2:25:44] expensive.
+[2:25:46] Well, the fast model is kind of close to
+[2:25:49] random guessing.
+[2:25:52] Uh we also try to give the model the
+[2:25:55] simulator fact. Basically, we give them
+[2:25:57] the ground truth
+[2:25:58] and let it to judge if it's success.
+[2:26:01] With this fact, also become almost uh
+[2:26:04] perfect but uh the fast model still not
+[2:26:07] improve and stay close to the guessing.
+[2:26:10] So in the real world scenario, our
+[2:26:12] conclusion is that we kind of need to
+[2:26:14] train our own vision language model to
+[2:26:17] do the task uh
+[2:26:19] uh to to the task tracking.
+[2:26:23] Uh to close uh large model has
+[2:26:27] has shown it can handle much of the
+[2:26:28] semantic side of robotics unlike
+[2:26:31] understanding the uh request and do the
+[2:26:34] planning. But
+[2:26:35] that kind of bring us to the
+[2:26:37] many classic uh robotics problem. How to
+[2:26:40] build reliable system around slow model?
+[2:26:43] How to proceed the scene correctly and
+[2:26:47] how to design clear interface between
+[2:26:49] different modules?
+[2:26:50] And how to get uh dependent uh
+[2:26:53] dependable motor skill that runs fast
+[2:26:56] and safe? I think it's kind of like
+[2:27:00] went back to 2019. It's kind of like uh
+[2:27:03] the robotics problem I go to
+[2:27:05] run a sense where we say uh
+[2:27:22] >> Thank you.
+[2:27:23] Any questions from the audience?
+[2:27:30] >> Thanks for the great talk and it's
+[2:27:31] really interesting to see your vision on
+[2:27:33] a hierarchical agent based system. I was
+[2:27:36] wondering have you ever thought about
+[2:27:39] extending this to dexterous manipulation
+[2:27:41] and then where
+[2:27:43] the agents would
+[2:27:45] like which interface would it operate
+[2:27:48] on?
+[2:27:53] >> Thank you. It's a very nice question. I
+[2:27:55] think dexterous manipulation is
+[2:27:58] one of the most challenging tasks in
+[2:28:00] robotics and it requires
+[2:28:03] have a lot of contact in these very high
+[2:28:06] frequency reaction to the
+[2:28:09] to the state of the object
+[2:28:11] to the hand.
+[2:28:12] So I feel like the
+[2:28:15] the large model itself cannot
+[2:28:18] solve it end to end. So we definitely
+[2:28:20] need a hierarchy structure to solve it.
+[2:28:24] And you know
+[2:28:25] most bottom line there is going to be
+[2:28:27] the hardware part where we one of the
+[2:28:30] hardware to basically protect itself to
+[2:28:33] to avoid some
+[2:28:35] like let's say joint off limit.
+[2:28:38] This kind of the bottom line layer on
+[2:28:40] top of it we want to have some compliant
+[2:28:42] control that kind of react
+[2:28:44] react to the the shape of the object to
+[2:28:47] the
+[2:28:48] disturbance of the environment. But for
+[2:28:51] the large model based agent I think it
+[2:28:53] is more like
+[2:28:56] doing more semantic job like giving
+[2:28:58] instruction to a lower level like given
+[2:29:00] a continuous command to the lower level
+[2:29:03] compliance control what's the target
+[2:29:05] what's the
+[2:29:06] what what's the what's the goal? So
+[2:29:08] basically it's like a translator that
+[2:29:11] translate the semantic um user message
+[2:29:16] to a more uh continuous space action for
+[2:29:20] the uh
+[2:29:21] low-level control.
+[2:29:25] >> Thank you. Let's give a big give a big
+[2:29:27] round of applause to Tian and for the
+[2:29:30] wonderful keynote.
+[2:29:33] Next we are going to announce two of our
+[2:29:35] best paper awards of our agentic
+[2:29:37] robotics workshop. So
+[2:29:40] first we have agentic world action
+[2:29:43] model.
+[2:29:54] Yeah, congratulations to um agentic
+[2:29:56] world action model team.
+[2:30:03] We have a
+[2:30:12] All the organizers and all the team.
+[2:30:26] Congratulations.
+[2:30:28] And for the second
+[2:30:31] second um
+[2:30:32] best paper award of our workshop is
+[2:30:36] embodied SWE.
+[2:30:39] Congratulations.
+[2:31:23] >> So actually uh
+[2:31:26] next we will have three oral sessions
+[2:31:30] for the demos. The first one will be
