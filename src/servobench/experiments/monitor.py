@@ -39,8 +39,14 @@ What it checks:
   a stalled call). A count of missed replies alone cannot bound this, because
   it does not know what a failed read costs. It is checked whenever the runner
   reports anything: a sample (the gap before it), a missed reply, a fault
-  poll, and the time at the top of every loop. And a plan that ends without a
-  single good reading after enable (``check_end``) has not been watched.
+  poll, and the time (after every command, and while the runner waits). And a
+  plan that ends without a single good reading after enable (``check_end``)
+  has not been watched. ``sample_gap_max`` is when the monitor decides, not
+  when the actuator stops: the monitor sees the time only when the runner
+  reports it, which is between adapter calls, so the stop request goes out up
+  to one adapter call later (``runner.stop_time_max_s``), and later still if a
+  call blocks for longer than the adapter declares. See "Stop time" in
+  ``servobench.experiments.runner``.
 - A fault reported by the device.
 - The experiment running longer than ``experiment_max``.
 - Before a command is sent, that it is finite and inside the command band (the

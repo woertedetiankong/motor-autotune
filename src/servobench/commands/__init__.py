@@ -28,8 +28,10 @@ aborted                    3     the actuator was enabled and the safety
                                  monitor stopped it, or Ctrl-C did
 aborted                    4     ... because the device reported a fault,
                                  stopped answering, or answered too slowly
-                                 (no good reading for sample_gap_max, or the
-                                 run fell behind its plan)
+                                 (no good reading for sample_gap_max, the
+                                 run fell behind its plan, or one adapter
+                                 call took longer than the adapter declares:
+                                 call_time_exceeded)
 error                      2     usage or bench-file error
 error                      4     the tool, the adapter or the device raised
                                  an error; the actuator could not be reached;
@@ -250,6 +252,7 @@ _DEVICE_KINDS = (
     checks.MISSED_REPLIES,
     checks.SAMPLE_GAP,
     runner.BEHIND_SCHEDULE,
+    runner.CALL_TIME_EXCEEDED,
 )
 # Refusals at validation: the request or the bench file, before any contact.
 _USAGE_KINDS = (runner.SPEC_INVALID, runner.ADAPTER_UNSUITABLE)
@@ -306,6 +309,14 @@ def judge_run(result: RunResult) -> RunJudgement | None:
                 f"The run could not keep to its plan ({message}). {state} Its samples do not"
                 " follow the planned experiment; do not analyse them. Tell the human: check the"
                 " cable, the bus settings, and whether the computer was busy or asleep."
+            )
+        elif kind == runner.CALL_TIME_EXCEEDED:
+            text = (
+                f"One call to the adapter took longer than the adapter declares ({message})."
+                f" {state} While that call blocked nothing watched the actuator, so the stop time"
+                " the tool states did not hold. Tell the human: the adapter's timeout (for a"
+                " serial bus, the port's read timeout and any retries) is longer than it declares,"
+                " or the computer stalled; run nothing more until the cause is known."
             )
         elif kind == checks.SAMPLE_GAP:
             text = (

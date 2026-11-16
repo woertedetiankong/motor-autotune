@@ -17,6 +17,7 @@ from servobench.contract import (
     TEMPERATURE,
     VELOCITY,
     VOLTAGE,
+    NoReply,
     PersistentWriteConfirmation,
 )
 from servobench.limits import TEMPLATE, SimSettings, parse_bench
@@ -315,3 +316,36 @@ def test_backlash_makes_the_reading_lag_a_reversal_by_the_play():
 def test_backlash_cannot_be_negative():
     with pytest.raises(ValueError, match="backlash_rad"):
         SimConfig(backlash_rad=-0.1)
+
+
+# == Regressions from the second outside review, 2026-11-16 ============================
+
+
+def test_every_call_stays_within_the_declared_bound_even_with_heavy_jitter():
+    # A reply later than the timeout is no reply; a command that gets no
+    # acknowledgement in time is given up at the timeout too, so the declared
+    # bound holds for every call however the bus is jittering.
+    servo = SimServo(SimConfig(jitter_s=0.01, seed=3))
+    bound_s = servo.describe().call_time_max_s
+    longest_s = 0.0
+
+    def timed(call, *args):
+        nonlocal longest_s
+        before_s = servo.clock.now_s()
+        try:
+            call(*args)
+        except NoReply:
+            pass
+        took_s = servo.clock.now_s() - before_s
+        longest_s = max(longest_s, took_s)
+        assert took_s <= bound_s * (1 + 1e-9), (call.__name__, took_s)
+
+    timed(servo.enable)
+    for _ in range(300):
+        timed(servo.command, POSITION, 0.0)
+        timed(servo.read)
+        timed(servo.read_faults)
+        timed(servo.read_parameter, "kp_n_m_rad")
+        timed(servo.write_parameter, "kp_n_m_rad", DEFAULT_PARAMS.kp_n_m_rad)
+    timed(servo.enter_safe_state)
+    assert longest_s == pytest.approx(bound_s)  # the heavy jitter did reach the bound

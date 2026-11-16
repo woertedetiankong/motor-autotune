@@ -87,8 +87,11 @@ class RunnerSettings:
     cool_wait_max_s: float
     # The longest an enabled actuator may go without a good reading of the
     # signals the safety monitor checks, however the time was lost (missed
-    # replies, slow replies, a stalled call). Also how far a run may overrun
-    # its plan. An experiment must sample at least four times within it.
+    # replies, slow replies, a stalled call), before the monitor stops the run.
+    # Also how far a run may overrun its plan. An experiment must sample at
+    # least four times within it, and it must hold at least two of the
+    # adapter's declared call times. It is not the stop time: the stop request
+    # goes out up to one more adapter call later (runner.stop_time_max_s).
     sample_gap_max_s: float
 
 
@@ -609,13 +612,23 @@ follow_time_max = "1 s"
 # quotes.
 missed_replies_max = 3
 # The longest the actuator may be enabled without a good reading of its
-# position, current, voltage and temperature. A run stops when this passes,
-# however the time was lost: missed replies, slow replies or a call that
-# stalled. A run that falls this far behind its plan stops too. An experiment
-# must sample at least four times within it, so with "200 ms" at 20 Hz or
-# faster. Keep it short: for this long, only the actuator's own protections
-# and the power supply act. 200 ms suits the simulated servo (three missed
-# replies cost it about 90 ms); set it from your bus's reply timeout.
+# position, current, voltage and temperature before the tool decides to stop
+# the run, however the time was lost: missed replies, slow replies or a call
+# that stalled. A run that falls this far behind its plan stops too. An
+# experiment must sample at least four times within it, so with "200 ms" at
+# 20 Hz or faster.
+#
+# This is not how fast the actuator is stopped. The tool can act only between
+# calls to the actuator, so the stop request goes out up to one more call
+# later: at worst sample_gap_max plus the longest one call can take, which the
+# adapter declares (check prints both; for the simulated servo 20 ms, so
+# 220 ms in all). It must be at least twice that call time, or nothing runs.
+# A call that blocks for longer than declared delays the stop until it
+# returns, and if the computer hangs or the cable is pulled, no stop request
+# is sent at all: then only a device that enters its safe state by itself on
+# lost communication, or your hand on the power, stops it. Keep it short. 200
+# ms suits the simulated servo (three missed replies cost it about 90 ms); for
+# real hardware set it from your bus's reply timeout.
 sample_gap_max = "200 ms"
 # Before an experiment, the actuator is moved from where it is to where the
 # experiment starts by a ramp at this speed. At most speed_max.

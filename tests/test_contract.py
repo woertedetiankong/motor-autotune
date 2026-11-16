@@ -160,3 +160,17 @@ def test_parameter_write_range_is_checked():
         check_parameter_write(GOOD, "kp_n_m_rad", -1.0, None)
     with pytest.raises(ContractError):
         check_parameter_write(GOOD, "kp_n_m_rad", math.nan, None)
+
+
+# == Regressions from the second outside review, 2026-11-16 ============================
+
+
+@pytest.mark.parametrize("bound", [None, 0.0, -0.01, math.inf, math.nan, True, "20 ms"])
+def test_the_bound_on_one_call_is_required_finite_and_positive(bound):
+    problems = check_description(with_changes(call_time_max_s=bound))
+    assert any("call_time_max_s" in problem for problem in problems), problems
+
+
+def test_the_simulated_servo_declares_its_reply_timeout_as_its_call_bound():
+    servo = SimServo()
+    assert GOOD.call_time_max_s == servo.config.reply_timeout_s == 0.02

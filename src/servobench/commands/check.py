@@ -43,14 +43,20 @@ The items:
     ``BUS_TEST_READS`` back-to-back reads of every signal: at least
     ``BUS_REPLY_SHARE_MIN`` of them answered, and the answered reads came at
     ``[check] sample_rate_min`` or faster, counting the time lost to missed
-    ones. With motion, the reads during the moves must also have reached it.
+    ones. Every one of them, answered or not, ended within the adapter's
+    declared ``call_time_max_s``, which the runner's stop time depends on. With
+    motion, the reads during the moves must also have reached the rate.
 ``protections``
     The protections the adapter declares, each yes, no or unknown. Pass only
     if every one is yes; otherwise a warning, never a fail, because a missing
     protection is a fact about the hardware that no setting fixes, and a check
     that can never pass on such hardware would teach its users to ignore it.
     The warning names what is missing so that the reader knows what only the
-    host-side monitor and the power supply guard.
+    host-side monitor and the power supply guard. The item also states, in one
+    place, how fast the host can stop the actuator at worst
+    (``runner.stop_time_max_s``: ``sample_gap_max`` plus the adapter's declared
+    call time) and what happens if the host cannot: whether the device enters
+    its safe state by itself when communication is lost (yes, no or unknown).
 ``zero``
     With torque off and a pendulum load, the arm hangs straight down, which
     the model and the bench limits take as position zero. The median position
@@ -121,10 +127,12 @@ from servobench.contract import (
     Support,
 )
 from servobench.experiments.runner import (
+    GAP_CALLS_MIN,
     RunResult,
     SafeStateWatch,
     note_previous_run,
     run_experiment,
+    stop_time_max_s,
     watch_safe_state,
 )
 from servobench.experiments.spec import Step, command_band_rad
@@ -277,6 +285,7 @@ class _Check:
         self.judgement: RunJudgement | None = None
         self.analysis: StepAnalysis | None = None
         self.ended_utc = None
+        self.read_time_longest_s = 0.0  # the longest read of the bus test
 
     def set(self, item: Item) -> None:
         self.items[item.name] = item
@@ -429,14 +438,18 @@ class _Check:
         samples: list[Sample] = []
         missed = 0
         last_error = None
-        start_s = adapter.clock.now_s()
+        clock = adapter.clock
+        self.read_time_longest_s = 0.0
+        start_s = clock.now_s()
         for _ in range(BUS_TEST_READS):
+            before_s = clock.now_s()
             try:
                 samples.append(adapter.read())
             except CommunicationError as error:
                 missed += 1
                 last_error = _error(error)
-        return samples, missed, adapter.clock.now_s() - start_s, last_error
+            self.read_time_longest_s = max(self.read_time_longest_s, clock.now_s() - before_s)
+        return samples, missed, clock.now_s() - start_s, last_error
 
     def voltage_item(self, description: Description) -> Item:
         limits = self.bench.limits
@@ -561,6 +574,8 @@ class _Check:
             "declared_max_sample_rate_hz": declared_hz,
             "sample_rate_min_hz": required_hz,
             "last_error": last_error,
+            "read_time_longest_s": self.read_time_longest_s,
+            "call_time_max_s": description.call_time_max_s,
         }
         problems = []
         if answered < BUS_REPLY_SHARE_MIN * BUS_TEST_READS:
@@ -577,6 +592,13 @@ class _Check:
             problems.append(
                 f"the adapter declares at most {_hz(declared_hz)}, below sample_rate_min"
                 f" {_hz(required_hz)}"
+            )
+        call_s = description.call_time_max_s
+        if _finite(call_s) and self.read_time_longest_s > call_s * (1 + 1e-9):
+            problems.append(
+                f"one read took {_s(self.read_time_longest_s)}, longer than the {_s(call_s)}"
+                " the adapter declares any call takes at most (call_time_max_s), so the"
+                " adapter breaks its contract and the tool's stop time cannot be trusted"
             )
         if problems:
             return Item(
@@ -601,11 +623,16 @@ class _Check:
     def protections_item(self, description: Description) -> Item:
         capabilities = description.capabilities
         declared = {name: getattr(capabilities, name).value for name in PROTECTION_NAMES}
+        stop_s = stop_time_max_s(description, self.bench.runner)
         values = {
             "protections": declared,
             "comm_loss_timeout_s": capabilities.comm_loss_timeout_s,
             "features": {name: getattr(capabilities, name).value for name in FEATURE_NAMES},
+            "host_stop_time_max_s": stop_s,
+            "sample_gap_max_s": self.bench.runner.sample_gap_max_s,
+            "call_time_max_s": description.call_time_max_s,
         }
+        stop = self.stop_statement(description, stop_s)
         missing = [
             PROTECTION_NAMES[name] for name, value in declared.items() if value == Support.NO.value
         ]
@@ -618,7 +645,7 @@ class _Check:
             return Item(
                 PROTECTIONS,
                 ITEM_PASS,
-                f"The adapter declares all {len(declared)} protections on the device.",
+                f"The adapter declares all {len(declared)} protections on the device. {stop}",
                 values,
             )
         parts = []
@@ -630,15 +657,61 @@ class _Check:
         return Item(
             PROTECTIONS,
             ITEM_WARNING,
-            detail[0].upper() + detail[1:],
+            f"{detail[0].upper() + detail[1:]} {stop}",
             values,
             next=(
                 "Nothing for check to fix: this is what the hardware has, and the tool treats"
                 " an unknown protection as missing. Against those hazards nothing acts except"
-                " the tool's safety monitor, which watches only while a command runs, the bench"
-                " power supply's current limit and the human's hand on the power."
+                " the tool's safety monitor, which watches only while a command runs and stops"
+                " the actuator no faster than stated here, the bench power supply's current"
+                " limit and the human's hand on the power."
             ),
         )
+
+    def stop_statement(self, description: Description, stop_s: float | None) -> str:
+        """How fast the host can stop the actuator at worst, and what acts if it cannot."""
+        gap_s = self.bench.runner.sample_gap_max_s
+        call_s = description.call_time_max_s
+        if stop_s is None:
+            host = (
+                "The adapter declares no valid bound on how long one call takes"
+                " (call_time_max_s), so the host cannot bound how late its stop would come; the"
+                " runner will not run this adapter."
+            )
+        else:
+            host = (
+                f"Host stop time: while an experiment runs, the tool sends the stop request at"
+                f" most {_s(stop_s)} after its last good reading (sample_gap_max {_s(gap_s)} plus"
+                f" the {_s(call_s)} the adapter declares one call can take), and only while"
+                " servobench and the computer keep running and every call keeps to that time;"
+                " a call that blocks longer delays the stop until it returns."
+            )
+            if GAP_CALLS_MIN * call_s > gap_s * (1 + 1e-9):
+                host += (
+                    f" The runner refuses to run this adapter: sample_gap_max must be at least"
+                    f" {GAP_CALLS_MIN} times the declared call time."
+                )
+        support = description.capabilities.safe_state_on_comm_loss
+        lost = "If the computer hangs or the link is lost, no stop request is sent at all"
+        if support is Support.YES:
+            device = (
+                f"{lost}; the adapter declares that the device then enters its safe state by"
+                f" itself after {_s(description.capabilities.comm_loss_timeout_s)} without"
+                " communication (declared: yes)."
+            )
+        elif support is Support.NO:
+            device = (
+                f"{lost}, and the device does not enter its safe state by itself when"
+                " communication is lost (declared: no): then only the power supply and the"
+                " human's hand on the power act."
+            )
+        else:
+            device = (
+                f"{lost}, and it is not known whether the device then enters its safe state by"
+                " itself (declared: unknown); treat it as not: only the power supply and the"
+                " human's hand on the power act."
+            )
+        return f"{host} {device}"
 
     def zero_item(self) -> Item:
         tolerance_rad = self.bench.check.zero_tolerance_rad
@@ -1067,6 +1140,8 @@ class _Check:
             "stop_message": None if stop is None else stop.message,
             "safe_state": result.safe_state.status.value,
             "cooled_s": result.cooled_s,
+            "stop_time_max_s": result.stop_time_max_s,
+            "call_time_longest_s": result.call_time_longest_s,
             "spec": result.spec.to_dict(),
             "notes": list(result.notes),
         }

@@ -49,6 +49,23 @@ def settle(adapter: Adapter, duration_s: float) -> None:
         adapter.read([POSITION])
 
 
+def within_call_time(adapter: Adapter, call, *args, allowed=()):
+    """Call ``call(*args)``; it must return, or raise one of ``allowed``, within the declared
+    call time. Returns (result, error)."""
+    bound_s = adapter.describe().call_time_max_s
+    before_s = adapter.clock.now_s()
+    try:
+        result, error = call(*args), None
+    except allowed as raised:
+        result, error = None, raised
+    took_s = adapter.clock.now_s() - before_s
+    assert took_s <= bound_s * (1 + 1e-9), (
+        f"{call.__name__} took {took_s} s; the adapter declares every call takes at most"
+        f" {bound_s} s (call_time_max_s)"
+    )
+    return result, error
+
+
 def small_move_target(adapter: Adapter, start_rad: float, move_rad: float) -> float:
     """A target ``move_rad`` away from ``start_rad``, inside the command range."""
     info = adapter.describe().command(POSITION)
@@ -290,3 +307,51 @@ def test_safe_state_from_any_state(adapter, target, reach_state):
     with pytest.raises(CommandRejected):
         adapter.command(POSITION, small_move_target(adapter, position(adapter), target.move_rad))
     assert adapter.read_faults() == ()
+
+
+# -- the time one call may take --------------------------------------------------------
+#
+# The runner can act only between calls, so the declared call_time_max_s is part
+# of how fast it can stop a run. Every call must return or raise within it,
+# whether or not the device answers.
+
+
+def test_every_reading_call_returns_within_the_declared_call_time(adapter):
+    description = adapter.describe()
+    for _ in range(50):
+        within_call_time(adapter, adapter.read)
+        within_call_time(adapter, adapter.read, [POSITION])
+        within_call_time(adapter, adapter.read_faults)
+    for parameter in description.parameters:
+        within_call_time(adapter, adapter.read_parameter, parameter.name)
+
+
+@pytest.mark.motion
+def test_every_call_that_changes_the_state_returns_within_the_declared_call_time(
+    adapter, target
+):
+    within_call_time(adapter, adapter.enable)
+    start_rad = position(adapter)
+    within_call_time(
+        adapter, adapter.command, POSITION, small_move_target(adapter, start_rad, target.move_rad)
+    )
+    settle(adapter, target.settle_s)
+    within_call_time(adapter, adapter.command, POSITION, start_rad)
+    for parameter in adapter.describe().parameters:
+        if parameter.writable and not parameter.persistent:
+            value = adapter.read_parameter(parameter.name)
+            within_call_time(adapter, adapter.write_parameter, parameter.name, value)
+    within_call_time(adapter, adapter.enter_safe_state)
+    within_call_time(adapter, adapter.enter_safe_state)  # again, from the safe state
+
+
+def test_calls_to_a_device_that_does_not_answer_end_within_the_declared_call_time(silent):
+    unanswered = 0
+    for _ in range(100):
+        _, error = within_call_time(silent, silent.read, allowed=CommunicationError)
+        unanswered += error is not None
+        within_call_time(silent, silent.read_faults, allowed=CommunicationError)
+    for parameter in silent.describe().parameters:
+        within_call_time(silent, silent.read_parameter, parameter.name, allowed=CommunicationError)
+    within_call_time(silent, silent.enter_safe_state, allowed=CommunicationError)
+    assert unanswered > 0, "the silent target answered every read; it does not test this"

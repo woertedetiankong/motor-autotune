@@ -19,6 +19,13 @@ the extra delay, as it is on a real bus. A command takes effect at the time it
 was sent plus the model's ``delay_s``. Between calls the model is not stepped;
 it catches up to the clock at the next call, so waiting is free.
 
+The bound on one call. No transaction lasts longer than ``reply_timeout_s``
+(four bus periods unless set): a reply later than that counts as no reply
+(``NoReply``, raised at the timeout), and a request that expects no reply is
+given up at the timeout too, as a real adapter's serial timeout would. Every
+call is one transaction, so the servo declares ``reply_timeout_s`` as its
+``call_time_max_s``.
+
 Every constant marked PLACEHOLDER below is an invented value chosen to make the
 simulator behave plausibly. None of them is a fact about the HD1910 or any other
 real servo.
@@ -347,18 +354,22 @@ class SimServo(Adapter):
         )
         t_device_s = t_sent_s + 0.5 * self._period_s + extra_s * self._timing.random()
         # A reply later than the timeout counts as no reply, as it would on a real bus.
+        timeout_s = self.config.reply_timeout_s
         t_done_s = t_sent_s + self._period_s + extra_s
-        late = t_done_s > t_sent_s + self.config.reply_timeout_s
+        late = t_done_s > t_sent_s + timeout_s
         dropped = (
             DROPPED_REPLIES in self.config.faults
             and self._drops.random() < self.config.dropped_reply_probability
         )
         if reply and (dropped or late):
             self._integrator.advance_to(t_device_s)
-            self._clock.wait_until_s(t_sent_s + self.config.reply_timeout_s)
-            raise NoReply(
-                f"the simulated servo did not reply within {self.config.reply_timeout_s} s"
-            )
+            self._clock.wait_until_s(t_sent_s + timeout_s)
+            raise NoReply(f"the simulated servo did not reply within {timeout_s} s")
+        if late:
+            # The request went out; the host stops waiting for its acknowledgement
+            # at the timeout, so no call lasts longer than call_time_max_s.
+            t_done_s = t_sent_s + timeout_s
+            t_device_s = min(t_device_s, t_done_s)
         self._clock.wait_until_s(t_done_s)
         return t_sent_s, t_device_s, t_done_s
 
@@ -489,6 +500,7 @@ class SimServo(Adapter):
             ),
             max_sample_rate_hz=config.sample_rate_hz,
             timestamp=TimestampSource.MIDPOINT,
+            call_time_max_s=config.reply_timeout_s,
             capabilities=Capabilities(
                 position_limit=Support.YES,
                 speed_limit=Support.NO,

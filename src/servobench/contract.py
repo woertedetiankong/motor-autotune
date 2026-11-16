@@ -22,6 +22,19 @@ between that and the actuator acting on it is part of the actuator's behaviour,
 to be measured, not hidden. Callers wait only through ``Adapter.clock``, never
 with ``time.sleep``, so a simulated adapter can run on virtual time.
 
+Bounded calls. Every call that may reach the device (``read``, ``command``,
+``enable``, ``enter_safe_state``, ``read_faults``, ``read_parameter``,
+``write_parameter``) returns or raises within ``Description.call_time_max_s``,
+measured on the adapter's clock from the moment it is called, whether the
+device answers or not. An adapter for a real bus guarantees this by setting
+its own timeouts (for a serial port, the read and write timeouts, plus any
+retries it makes) and declares the resulting worst case; it never waits on the
+device without a timeout. The bound matters for safety: the runner is
+single-threaded and can act only between calls, so a call that blocks is time
+in which nothing watches the actuator and no stop request can be sent. A call
+that takes longer than declared breaks the contract, and the runner stops the
+run when it sees one.
+
 Honesty. ``Description.capabilities`` states which protections the hardware
 really has. ``Support.YES`` is a claim the adapter's author has verified on the
 device or read in its primary documentation; anything else is ``NO`` or
@@ -207,6 +220,11 @@ class Description:
     # to back and still reply reliably.
     max_sample_rate_hz: float
     timestamp: TimestampSource
+    # The longest any one call that may reach the device takes to return or
+    # raise, on the adapter's clock, whether or not the device answers (see
+    # "Bounded calls" above). Finite and above zero. A real adapter sets its
+    # timeouts so that this holds and declares the result.
+    call_time_max_s: float
     capabilities: Capabilities
     # What the safe state is on this device, in plain words, including what
     # the load does in it: for example "torque off: the output turns freely
@@ -325,7 +343,7 @@ class Adapter(ABC):
         later than the previous call's. Works in every state, the safe state
         included. Raises ``ContractError`` for an undeclared name and
         ``CommunicationError`` (for example ``NoReply``) when the device does not
-        answer.
+        answer, within ``Description.call_time_max_s`` like every other call.
         """
 
     @abstractmethod
@@ -354,9 +372,10 @@ class Adapter(ABC):
 
         Works from any state, may be called any number of times, and returns
         only once the adapter has done everything it can to confirm the device
-        is there. Reading still works afterwards. Commands are refused until
-        ``enable`` is called again. Raises ``CommunicationError`` if the device
-        cannot be reached; the caller should retry and then tell a human.
+        is there, within ``Description.call_time_max_s``. Reading still works
+        afterwards. Commands are refused until ``enable`` is called again.
+        Raises ``CommunicationError`` if the device cannot be reached; the
+        caller should retry and then tell a human.
         """
 
     @abstractmethod
@@ -455,6 +474,11 @@ def check_description(description: Description) -> list[str]:
 
     if not (_finite(description.max_sample_rate_hz) and description.max_sample_rate_hz > 0):
         problems.append("max_sample_rate_hz must be a finite rate above zero")
+    if not (_finite(description.call_time_max_s) and description.call_time_max_s > 0):
+        problems.append(
+            "call_time_max_s must be a finite time above zero: the longest any one call takes"
+            " to return or raise, whether or not the device answers"
+        )
     if not isinstance(description.timestamp, TimestampSource):
         problems.append("timestamp must be a TimestampSource")
 

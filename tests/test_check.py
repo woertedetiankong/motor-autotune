@@ -458,3 +458,98 @@ def test_an_unexpected_exception_after_the_run_is_reported_with_its_record(
     record = records.load_run(here / output["run_dir"])
     assert record.verdict == "error" and record.safe_state.status.value == "confirmed"
     assert record.metrics["error"]["type"] == "ZeroDivisionError"
+
+
+# == Regressions from the second outside review, 2026-11-16 ===============================
+
+
+def test_protections_state_the_worst_case_stop_time_and_the_device_watchdog(here, capsys):
+    code, output = check(here, capsys, "--no-motion")
+    assert code == 0
+    item = output["metrics"]["items"]["protections"]
+    values = item["values"]
+    assert values["call_time_max_s"] == 0.02
+    assert values["sample_gap_max_s"] == 0.2
+    assert values["host_stop_time_max_s"] == pytest.approx(0.22)
+    assert values["protections"]["safe_state_on_comm_loss"] == "no"
+    detail = item["detail"]
+    assert "0.22 s" in detail and "sample_gap_max 0.2 s" in detail
+    assert "0.02 s" in detail
+    assert "If the computer hangs" in detail
+    assert "does not enter its safe state by itself" in detail and "(declared: no)" in detail
+    assert "within 200 ms" not in json.dumps(output)
+
+
+@pytest.mark.parametrize(
+    ("support", "timeout_s", "words"),
+    [
+        ("yes", 0.5, "enters its safe state by itself after 0.5 s"),
+        ("unknown", None, "it is not known whether the device then enters its safe state"),
+    ],
+)
+def test_the_device_watchdog_is_stated_as_declared(tmp_path, support, timeout_s, words):
+    from servobench.contract import Support
+
+    class Watchdog(Spy):
+        def describe(self):
+            description = super().describe()
+            capabilities = dataclasses.replace(
+                description.capabilities,
+                safe_state_on_comm_loss=Support(support),
+                comm_loss_timeout_s=timeout_s,
+            )
+            return dataclasses.replace(description, capabilities=capabilities)
+
+    result = run_check(BENCH, motion=False, adapter=Watchdog(), runs_dir=tmp_path)
+    detail = result.metrics["items"]["protections"]["detail"]
+    assert words in detail and f"(declared: {support})" in detail
+
+
+def test_a_read_slower_than_the_declared_call_time_fails_the_bus_and_nothing_moves(tmp_path):
+    class Slow(Spy):
+        reads = 0
+
+        def read(self, signals=None):
+            type(self).reads += 1
+            if type(self).reads == 50:  # one read of the bus test takes 100 ms
+                self.clock.wait_s(0.1)
+            return super().read(signals)
+
+    servo = Slow()
+    result = run_check(BENCH, adapter=servo, runs_dir=tmp_path)
+    bus = result.metrics["items"]["bus"]
+    assert bus["status"] == "fail", bus["detail"]
+    assert "call_time_max" in bus["detail"]
+    assert bus["values"]["read_time_longest_s"] > 0.1
+    assert "enable" not in servo.calls
+
+
+def test_a_call_slower_than_declared_is_a_device_problem_exit_4():
+    class Stalls(SimServo):
+        reads = 0
+
+        def read(self, signals=None):
+            type(self).reads += 1
+            if type(self).reads == 150:  # during the run: 0.5 s against a declared 20 ms
+                self.clock.wait_s(0.5)
+            return super().read(signals)
+
+    result = outcome_of(Hold(0.0, 3.0), servo=Stalls(load=LOAD))
+    assert result.outcome is Outcome.ABORTED and result.stop.kind == runner.CALL_TIME_EXCEEDED
+    judgement = judge_run(result)
+    assert (judgement.verdict, judgement.exit_code, judgement.needs_human) == (
+        "aborted",
+        ExitCode.DEVICE,
+        True,
+    )
+    assert "longer than the adapter declares" in judgement.next
+    # Before contact, a too slow preflight read is the same problem, and nothing moved.
+    class SlowFirst(SimServo):
+        def read(self, signals=None):
+            self.clock.wait_s(0.05)
+            return super().read(signals)
+
+    refused = outcome_of(Hold(0.0, 1.0), servo=SlowFirst(load=LOAD))
+    assert refused.outcome is Outcome.REFUSED and refused.stop.kind == runner.CALL_TIME_EXCEEDED
+    assert refused.stop.stage == runner.PREFLIGHT and refused.trace is None
+    assert int(judge_run(refused).exit_code) == 4

@@ -481,13 +481,22 @@ def test_a_device_fault_during_the_run_stops_it():
 
 
 def test_a_run_past_experiment_max_is_stopped():
-    def stall(servo, n):
-        if n == 200:  # one read hangs for 40 s of simulated time
-            servo.clock.wait_s(40.0)
+    # A plan of 29.95 s, inside experiment_max (30 s). One read that starts
+    # 29.91 s in takes about 95 ms, inside the 100 ms this servo declares, so
+    # the run is still going 30 s in. (One read hanging for 40 s, as this test
+    # used to have, now stops the run as call_time_exceeded instead.)
+    started = {}
 
-    servo = Spy(hooks={"read": stall})
-    result = run(servo, Hold(0.0, 20.0))
-    assert result.outcome is Outcome.ABORTED
+    def slow(servo, n):
+        if "enable" in servo.calls and not started:
+            started["t"] = servo.clock.now_s()
+        if started and servo.clock.now_s() > started["t"] + 29.91 and "slow" not in started:
+            started["slow"] = True
+            servo.clock.wait_s(0.09)
+
+    servo = Spy(noise=False, reply_timeout_s=0.1, hooks={"read": slow})
+    result = run(servo, Hold(0.0, 29.95))
+    assert result.outcome is Outcome.ABORTED, result.summary
     assert result.stop.kind == checks.DURATION
     assert result.stop.elapsed_s > 30.0
     assert_ends_safe(servo, result)
@@ -712,8 +721,16 @@ class _BlindAfterEnable(Spy):
 
 @pytest.mark.parametrize("timeout_s", [0.02, 0.1, 0.2, 0.3])
 def test_reads_lost_after_enable_stop_the_run_however_long_a_failed_read_takes(timeout_s):
-    servo = _BlindAfterEnable(timeout_s)
+    # The adapter declares the timeout it has. One too long for sample_gap_max
+    # (200 ms) is refused before contact; a shorter one runs and is stopped.
+    # (An adapter that takes longer than it declares: the regressions below.)
+    servo = _BlindAfterEnable(timeout_s, reply_timeout_s=timeout_s)
     result = run(servo, Hold(0.0, 5.0))
+    if 2 * timeout_s > TEMPLATE_BENCH.runner.sample_gap_max_s:
+        assert result.outcome is Outcome.REFUSED, result.summary
+        assert result.stop.kind == runner.ADAPTER_UNSUITABLE
+        assert servo.calls == []
+        return
     assert result.outcome is Outcome.ABORTED, result.summary
     assert result.stop.kind in ("missed_replies", "sample_gap")
     assert result.trace.t_end_s - result.trace.t_start_s < 1.0  # not the 5 s plan
@@ -742,7 +759,11 @@ def test_a_stalled_read_that_then_answers_still_stops_the_run():
     servo = Spy(hooks={"read": stall})
     result = run(servo, Hold(0.0, 5.0))
     assert result.outcome is Outcome.ABORTED, result.summary
-    assert result.stop.kind == "sample_gap"
+    # Half a second is far beyond the 20 ms the simulated servo declares for a
+    # call: that is now reported as the adapter breaking its contract. (With
+    # an honest declaration a single call can no longer outlast sample_gap_max,
+    # which must hold two of them; sample_gap from failed reads is tested above.)
+    assert result.stop.kind == "call_time_exceeded"
     assert_ends_safe(servo, result)
 
 
@@ -782,14 +803,15 @@ def test_a_stall_that_carries_the_run_past_a_whole_segment_is_not_completed():
     def stall(servo, n):
         if "enable" in servo.calls and not started:
             started["t"] = servo.clock.now_s()
-        # Near the end of the 0.5 s settle, one read takes 0.15 s, which is
-        # less than sample_gap_max but more than the 0.1 s step after it.
+        # Near the end of the 0.5 s settle, one read takes about 0.095 s,
+        # inside the 0.1 s this servo declares and less than sample_gap_max,
+        # but more than the 0.06 s step after it.
         if started and servo.clock.now_s() > started["t"] + 0.48 and "stalled" not in started:
             started["stalled"] = True
-            servo.clock.wait_s(0.15)
+            servo.clock.wait_s(0.09)
 
-    servo = Spy(noise=False, hooks={"read": stall})
-    result = run(servo, Step(0.0, (10 * DEG,), dwell_s=0.1, settle_s=0.5))
+    servo = Spy(noise=False, reply_timeout_s=0.1, hooks={"read": stall})
+    result = run(servo, Step(0.0, (10 * DEG,), dwell_s=0.06, settle_s=0.5))
     assert result.outcome is Outcome.ABORTED, result.summary
     assert result.stop.kind == "behind_schedule"
     assert "step 1: 0 deg to 10 deg" in result.stop.message
@@ -800,23 +822,129 @@ def test_a_stall_that_carries_the_run_past_a_whole_segment_is_not_completed():
 def test_a_run_carried_materially_past_the_end_of_its_plan_is_not_completed():
     started = {}
 
-    def late_read(servo, n):
+    def late_command(servo, n):
         if "enable" in servo.calls and not started:
             started["t"] = servo.clock.now_s()
-        if started and servo.clock.now_s() > started["t"] + 0.99 and "read" not in started:
-            started["read"] = True
-            servo.clock.wait_s(0.15)
+        if started and servo.clock.now_s() > started["t"] + 1.49 and "command" not in started:
+            started["command"] = True
+            servo.clock.wait_s(0.09)
 
-    def late_poll(servo, n):
-        if started.get("read") and "poll" not in started:
-            started["poll"] = True
-            servo.clock.wait_s(0.15)
+    def late(name):
+        def hook(servo, n):
+            if started.get("command") and name not in started:
+                started[name] = True
+                servo.clock.wait_s(0.09)
 
-    # Each stall is shorter than sample_gap_max, but together they keep the
-    # actuator enabled 0.3 s past the end of a 1 s plan.
-    servo = Spy(noise=False, hooks={"read": late_read, "read_faults": late_poll})
-    result = run(servo, Hold(0.0, 1.0))
+        return hook
+
+    # Just before the end of a 1.5 s plan whose last part is a sine (a command
+    # on every pass), the command, the read and the fault poll of one pass each
+    # take about 0.095 s: each inside the 0.1 s this servo declares and far
+    # shorter than sample_gap_max, but together they keep the actuator enabled
+    # more than sample_gap_max past the end of the plan.
+    servo = Spy(
+        noise=False,
+        reply_timeout_s=0.1,
+        hooks={"command": late_command, "read": late("read"), "read_faults": late("poll")},
+    )
+    result = run(servo, SteppedSine(0.0, 5 * DEG, (1.0,), 1, 0, settle_s=0.5))
     assert result.outcome is Outcome.ABORTED, result.summary
     assert result.stop.kind == "behind_schedule"
     assert "longer than planned" in result.stop.message
     assert_ends_safe(servo, result)
+
+
+# == Regressions from the second outside review, 2026-11-16 ===========================
+#
+# The runner can act only between adapter calls, so sample_gap_max bounds how
+# late the stop request is only together with the time one call can take. That
+# time is now part of the contract (Description.call_time_max_s): the runner
+# refuses an adapter whose declared time is too long for sample_gap_max, and a
+# call that takes longer than declared stops the run as a broken contract.
+
+CALL_TIME_EXCEEDED = "call_time_exceeded"
+
+
+def _stall_once_after(delay_s, stall_s, call="read"):
+    """A hook: once, ``delay_s`` after enable, the call blocks for ``stall_s`` first."""
+    state = {}
+
+    def hook(servo, n):
+        if "enable" in servo.calls and "t" not in state:
+            state["t"] = servo.clock.now_s()
+        if "t" in state and "done" not in state and servo.clock.now_s() > state["t"] + delay_s:
+            state["done"] = True
+            servo.clock.wait_s(stall_s)
+
+    return {call: hook}
+
+
+@pytest.mark.parametrize("stall_s", [0.1, 0.5, 3.0])
+def test_a_call_that_blocks_longer_than_declared_stops_the_run_as_a_broken_contract(stall_s):
+    servo = Spy(hooks=_stall_once_after(1.0, stall_s))
+    result = run(servo, Hold(0.0, 5.0))
+    assert result.outcome is Outcome.ABORTED, result.summary
+    assert result.stop.kind == CALL_TIME_EXCEEDED
+    assert result.stop.value > stall_s
+    assert result.stop.limit == servo.describe().call_time_max_s
+    assert result.stop.unit == "s"
+    assert "call_time_max" in result.stop.message and "read" in result.stop.message
+    assert_ends_safe(servo, result)
+
+
+def test_a_failed_read_slower_than_declared_is_a_broken_contract_not_a_missed_reply():
+    servo = _BlindAfterEnable(0.1)  # declares the simulated servo's 20 ms, takes 100 ms
+    result = run(servo, Hold(0.0, 5.0))
+    assert result.stop.kind == CALL_TIME_EXCEEDED, result.summary
+    assert "NoReply" in result.stop.message
+    assert_ends_safe(servo, result)
+
+
+def test_an_adapter_whose_call_time_is_too_long_for_sample_gap_max_is_refused_before_contact():
+    servo = Spy(reply_timeout_s=0.15)  # declares 150 ms; sample_gap_max is 200 ms
+    result = run(servo, Hold(0.0, 1.0))
+    assert result.outcome is Outcome.REFUSED, result.summary
+    assert servo.describe().call_time_max_s == 0.15
+    assert result.stop.kind == runner.ADAPTER_UNSUITABLE and result.stop.stage == runner.VALIDATE
+    assert "call_time_max" in result.stop.message and "sample_gap_max" in result.stop.message
+    assert "at least 0.3 s" in result.stop.message  # what sample_gap_max would have to be
+    assert servo.calls == []
+    # At half of sample_gap_max it runs.
+    assert run(Spy(reply_timeout_s=0.1), Hold(0.0, 1.0)).outcome is Outcome.COMPLETED
+
+
+def test_the_worst_case_stop_time_is_worked_out_before_contact():
+    result = run(Spy(), Hold(0.0, 1.0))
+    assert result.stop_time_max_s == pytest.approx(0.2 + 0.02)  # sample_gap_max + call time
+    refused = run(Spy(), Hold(0.0, 0.02))  # refused at validation: still worked out
+    assert refused.outcome is Outcome.REFUSED
+    assert refused.stop_time_max_s == pytest.approx(0.22)
+
+
+class _TimedBlind(_BlindAfterEnable):
+    """Blind after enable, failing each read after an honestly declared timeout."""
+
+    def __init__(self, timeout_s, **config):
+        super().__init__(timeout_s, reply_timeout_s=timeout_s, **config)
+        self.safe_requests: list[float] = []
+
+    def enter_safe_state(self):
+        self.safe_requests.append(self.clock.now_s())
+        super().enter_safe_state()
+
+
+@pytest.mark.parametrize("timeout_s", [0.02, 0.06, 0.1])
+@pytest.mark.parametrize(
+    "spec",
+    [Hold(0.0, 5.0), SteppedSine(0.0, 5 * DEG, (1.0,), 4, 1, settle_s=0.05)],
+    ids=["hold", "sine"],  # a sine sends a command on every pass of the loop
+)
+def test_the_stop_request_goes_out_within_the_stated_worst_case(timeout_s, spec):
+    servo = _TimedBlind(timeout_s)
+    result = run(servo, spec)
+    assert result.outcome is Outcome.ABORTED, result.summary
+    assert result.stop.kind in (checks.MISSED_REPLIES, checks.SAMPLE_GAP)
+    last_good_s = result.trace.samples[-1].t_s
+    first_request_s = min(t_s for t_s in servo.safe_requests if t_s > last_good_s)
+    assert first_request_s - last_good_s <= result.stop_time_max_s
+    assert result.stop_time_max_s == pytest.approx(0.2 + timeout_s)

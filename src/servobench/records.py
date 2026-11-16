@@ -10,7 +10,9 @@ A run directory is named ``<UTC date and time>-<command>-<target>``, for example
     experiment spec, the model parameters used for the rehearsal, the outcome
     and its one-line summary, the reason the run stopped (if it did), the
     safe-state report, the verdict and metrics, the faults before and after,
-    the preflight reading, the runner's notes, and for the real run and the
+    the preflight reading, the worst-case stop time the runner worked out
+    (``stop_time_max_s``) and the longest adapter call it measured
+    (``call_time_longest_s``), the runner's notes, and for the real run and the
     rehearsal: the segments with their start times, the enable and start and
     end times, the missed reads, and how the run stopped. Every value is SI
     under a name that ends in its unit.
@@ -237,6 +239,8 @@ def write_run(
         "faults_before": _plain(result.faults_before),
         "faults_after": _plain(result.faults_after),
         "cooled_s": result.cooled_s,
+        "stop_time_max_s": result.stop_time_max_s,
+        "call_time_longest_s": result.call_time_longest_s,
         "notes": list(result.notes),
         "trace": _plain_trace(result.trace),
         "rehearsal": _plain_trace(result.rehearsal),

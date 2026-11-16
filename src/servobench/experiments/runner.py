@@ -10,8 +10,11 @@ skips one.
    band, every signal the monitor needs, the sample rate. And the spec against
    its own sampling period: every segment must last at least
    ``SEGMENT_PERIODS_MIN`` periods, and ``sample_gap_max`` must hold at least
-   ``GAP_PERIODS_MIN`` of them (see those constants). A problem refuses the
-   run.
+   ``GAP_PERIODS_MIN`` of them (see those constants). And ``sample_gap_max``
+   against the adapter's declared bound on one call (``call_time_max_s``): it
+   must hold at least ``GAP_CALLS_MIN`` of them, or the bound would be set by
+   the adapter rather than by the bench file (see "Stop time" below). A problem
+   refuses the run.
 2. Preflight, reading only. The device's faults and one sample. The run is
    refused if the device reports a fault, a reading is outside the limits, the
    actuator is outside the command band, or the experiment with its approach
@@ -37,7 +40,11 @@ skips one.
    most of a period, a missed one a whole timeout, a bus can stall), so it
    stops the run (``BEHIND_SCHEDULE``) rather than pass over a segment whose
    command was never sent, or leave the actuator enabled more than
-   ``sample_gap_max`` past the end of the plan. A run is ``COMPLETED`` only if
+   ``sample_gap_max`` past the end of the plan. Every adapter call, from the
+   preflight on, is timed on the adapter's clock, and one that takes longer than
+   the adapter's declared ``call_time_max_s`` stops the run
+   (``CALL_TIME_EXCEEDED``): the adapter broke its contract, and after that
+   nothing about the run's timing can be trusted. A run is ``COMPLETED`` only if
    every segment's command was sent, it ended on time, and the monitor had a
    good reading after enable.
 6. Safe state. From stage 2 on, every exit enters the safe state: completion,
@@ -53,6 +60,25 @@ An interrupt therefore never lands half-way through a bus transaction or
 between an exception and the safe state. A ``KeyboardInterrupt`` raised some
 other way is caught and handled the same way. An adapter call that never
 returns cannot be interrupted like this; adapters must time out (``NoReply``).
+
+Stop time, and its honest limit. The runner is single-threaded and adapter
+calls are synchronous, so it can look at the time, and send a stop request,
+only between calls. It checks the time without a good reading after every
+call and at least once per ``call_time_max_s`` while it waits. So, while every
+call keeps to the adapter's declared bound, the first safe-state request is
+sent at most ``sample_gap_max + call_time_max_s`` after the last good reading
+(``stop_time_max_s``; reported in every result), plus whatever time the
+computer itself loses, which the tool cannot bound. That request then takes up
+to one more call to be confirmed, and each failed attempt is retried. A call
+that blocks longer than declared delays the stop request until it returns:
+the run is then stopped as ``CALL_TIME_EXCEEDED``, but the actuator went
+unwatched for as long as the call blocked. If the computer hangs or loses the
+link, no stop request is sent at all: only a safe state the device enters by
+itself when communication is lost (``Capabilities.safe_state_on_comm_loss``)
+or the human cutting power stops the actuator then. The runner deliberately
+has no second thread talking to the device while a call is blocked: the bus is
+shared and half-duplex, and a second writer during a pending transaction is a
+hazard of its own.
 
 Time. Every wait and every timestamp is on the adapter's clock, so a run on the
 simulated servo is on virtual time.
@@ -131,6 +157,15 @@ SEGMENT_PERIODS_MIN = 10
 # can already see readings up to three periods apart (a command, a read and a
 # fault poll in one pass); one more period leaves room for a jittery bus.
 GAP_PERIODS_MIN = 4
+# sample_gap_max must hold at least this many of the adapter's declared call
+# times (Description.call_time_max_s). With two, one read that times out at the
+# full bound and the read after it fit inside sample_gap_max, so a single
+# missed reply, which missed_replies_max tolerates, does not by itself stop the
+# run; and the worst case from the last good reading to the stop request,
+# sample_gap_max + call_time_max_s, is at most 1.5 times sample_gap_max, so the
+# bench file's value still describes it. With a longer call time the stop time
+# would be set mostly by the adapter, not by the bench file.
+GAP_CALLS_MIN = 2
 
 # Stages, in order.
 VALIDATE = "validate"
@@ -153,6 +188,9 @@ EXCEPTION = "exception"  # any other exception: a bug
 # The run fell behind its plan: a segment passed before its command could be
 # sent, or the actuator stayed enabled more than sample_gap_max past the end.
 BEHIND_SCHEDULE = "behind_schedule"
+# An adapter call took longer than the adapter's declared call_time_max_s: the
+# adapter broke its contract, and the run's timing can no longer be trusted.
+CALL_TIME_EXCEEDED = "call_time_exceeded"
 
 
 class Outcome(Enum):
@@ -263,6 +301,13 @@ class RunResult:
     rehearsal: Trace | None
     trace: Trace | None  # the real run; None if the actuator was never enabled
     notes: tuple[str, ...] = ()
+    # The worst case, on the host, from the last good reading to sending the
+    # first safe-state request, while every call keeps to its declared bound:
+    # sample_gap_max + the adapter's call_time_max_s. None if the adapter
+    # declares no valid bound (it is then refused). See the module text.
+    stop_time_max_s: float | None = None
+    # The longest any one call to the target adapter took during this run.
+    call_time_longest_s: float | None = None
 
     @property
     def safe_state_confirmed(self) -> bool:
@@ -358,6 +403,8 @@ def run_experiment(
             run.stages(stop_request)
         except _Stopped as stopped:
             stop = stopped.reason
+        except _CallTooSlow as slow:
+            stop = run.call_too_slow(slow)
         except KeyboardInterrupt:
             stop = run.stop_here(INTERRUPTED_KIND, "interrupted by Ctrl-C (KeyboardInterrupt)")
         except AdapterError as error:
@@ -366,7 +413,7 @@ def run_experiment(
             stop = run.stop_here(EXCEPTION, f"{type(error).__name__}: {error}")
         finally:
             # Nothing else may come first: whatever ended the run, the safe state.
-            safe = _enter_safe_state(adapter)
+            safe = _enter_safe_state(adapter, run.description.call_time_max_s, run.notes)
             _tell_watches(safe, run.description)
             try:
                 run.finish()
@@ -421,6 +468,21 @@ class _RunEnds:
 _last_run_end_s = _RunEnds()
 
 
+def stop_time_max_s(description: Description, settings: RunnerSettings) -> float | None:
+    """The worst case from the last good reading to sending the first safe-state request.
+
+    ``sample_gap_max`` plus the adapter's declared ``call_time_max_s``, the
+    longest the runner can be held inside one call before it sees the time
+    (see "Stop time" in the module text). It holds only while every call keeps
+    to that bound and the computer itself keeps running; None if the adapter
+    declares no valid bound.
+    """
+    call_s = description.call_time_max_s
+    if not _valid_time(call_s):
+        return None
+    return settings.sample_gap_max_s + call_s
+
+
 def note_previous_run(adapter: Adapter, ended_s_ago: float) -> None:
     """Tell the runner that a run on this actuator ended ``ended_s_ago`` seconds ago.
 
@@ -466,6 +528,8 @@ class _Run:
         self.target: _TraceBuilder | None = None
         self.target_trace: Trace | None = None
         self.notes: list[str] = []
+        # Times every call to the adapter; set once validation has passed.
+        self.timer: _CallTimer | None = None
         rate_hz = self.description.max_sample_rate_hz
         if spec.sample_rate_hz is not None:
             rate_hz = min(rate_hz, spec.sample_rate_hz)
@@ -488,6 +552,20 @@ class _Run:
                     f" {_deg(info.maximum)}, narrower than the bench file's command range"
                     f" {_deg(band_low_rad)} to {_deg(band_high_rad)}"
                 )
+        call_s = description.call_time_max_s
+        gap_s = self.settings.sample_gap_max_s
+        if _valid_time(call_s) and GAP_CALLS_MIN * call_s > gap_s * (1 + 1e-9):
+            unsuitable.append(
+                f"it declares that one call can take up to {_s(call_s)} (call_time_max_s), too"
+                f" long for sample_gap_max {_s(gap_s)}. The runner can act only between calls,"
+                f" so the stop request could come as late as {_s(gap_s + call_s)} after the last"
+                f" good reading, and one read that times out followed by the next"
+                f" ({_s(GAP_CALLS_MIN * call_s)}) would not fit within sample_gap_max."
+                f" sample_gap_max must be at least {GAP_CALLS_MIN} times the declared call"
+                f" time: either the owner raises [runner] sample_gap_max to at least"
+                f" {_s(GAP_CALLS_MIN * call_s)}, or the adapter is set up with shorter timeouts"
+                f" so that it declares at most {_s(gap_s / GAP_CALLS_MIN)}"
+            )
         missing = [name for name in MONITORED_SIGNALS if name not in description.signal_names]
         if missing:
             unsuitable.append(
@@ -565,6 +643,7 @@ class _Run:
 
     def stages(self, stop_request: _StopRequest) -> None:
         self.stop_request = stop_request
+        self.timer = _CallTimer(self.adapter, self.description.call_time_max_s)
         self.stage = PREFLIGHT
         plan = self.run_preflight()
         self.stage = COOLING
@@ -589,13 +668,14 @@ class _Run:
                 self.target,
                 self.period_s,
                 stop_request,
+                self.timer,
             )
         finally:
             self.target_trace = self.target.freeze()
 
     def run_preflight(self) -> tuple[Segment, ...]:
         limits = self.limits
-        faults = self.read_retrying(self.adapter.read_faults)
+        faults = self.read_retrying("read_faults", self.adapter.read_faults)
         self.faults_before = faults
         if faults:
             listed = "; ".join(f"{fault.code}: {fault.description}" for fault in faults)
@@ -604,7 +684,7 @@ class _Run:
                 f"the device reports a fault ({listed}). The tool cannot clear faults; a human"
                 " must find the cause and clear it",
             )
-        sample = self.read_retrying(self.adapter.read)
+        sample = self.read_retrying("read", self.adapter.read)
         self.preflight = sample
         monitor = Monitor(limits, self.settings)
         violation = monitor.on_sample(sample)
@@ -656,7 +736,8 @@ class _Run:
         # Wait at rest, in the safe state, so the actuator cools. The cool-down
         # after a run is waited in full; waiting for the temperature to fall is
         # limited to cool_wait_max in all.
-        self.adapter.enter_safe_state()
+        with self.timer.timing("enter_safe_state"):
+            self.adapter.enter_safe_state()
         start_s = self.clock.now_s()
         try:
             if rest_left_s > 0:
@@ -664,7 +745,7 @@ class _Run:
             if self.cool_deadline_s is None:
                 self.cool_deadline_s = self.clock.now_s() + settings.cool_wait_max_s
             while True:
-                sample = self.read_retrying(lambda: self.adapter.read([TEMPERATURE]))
+                sample = self.read_retrying("read", self.adapter.read, [TEMPERATURE])
                 temperature_degc = sample[TEMPERATURE]
                 if temperature_degc <= limits.start_temperature_max_degc:
                     return True
@@ -698,6 +779,7 @@ class _Run:
                 builder,
                 self.period_s,
                 self.stop_request,
+                _CallTimer(servo, servo.describe().call_time_max_s),
             )
         finally:
             servo.enter_safe_state()
@@ -727,13 +809,14 @@ class _Run:
 
     # Helpers -------------------------------------------------------------------------
 
-    def read_retrying(self, call: Callable[[], T]) -> T:
-        """Call a read, allowing missed_replies_max missed replies in a row."""
+    def read_retrying(self, name: str, call: Callable[..., T], *args) -> T:
+        """Call a read, timed, allowing missed_replies_max missed replies in a row."""
         monitor = Monitor(self.limits, self.settings)
         while True:
             self.check_interrupt()
             try:
-                return call()
+                with self.timer.timing(name):
+                    return call(*args)
             except CommunicationError as error:
                 violation = monitor.on_missed(
                     self.clock.now_s(), f"{type(error).__name__}: {error}"
@@ -774,6 +857,18 @@ class _Run:
             )
         )
 
+    def call_too_slow(self, slow: _CallTooSlow) -> StopReason:
+        """The stop for a call, outside the run's own loop, that took longer than declared."""
+        return StopReason(
+            CALL_TIME_EXCEEDED,
+            self.stage,
+            slow.message,
+            slow.end_s,
+            value=slow.took_s,
+            limit=slow.bound_s,
+            unit="s",
+        )
+
     def stop_here(self, kind: str, message: str) -> StopReason:
         """A stop at the present moment: during the run if it had started, else in its stage."""
         builder = self.target
@@ -791,7 +886,13 @@ class _Run:
             if end_s is not None:
                 _last_run_end_s.set(self.adapter, end_s)
         try:
-            self.faults_after = self.adapter.read_faults()
+            if self.timer is None:
+                self.faults_after = self.adapter.read_faults()
+            else:
+                with self.timer.timing("read_faults"):
+                    self.faults_after = self.adapter.read_faults()
+        except _CallTooSlow as slow:
+            self.notes.append(f"after the run: {slow.message}")
         except BaseException as error:  # noqa: BLE001 - after the safe state, only recorded
             self.notes.append(f"the faults could not be read after the run: {error!r}")
 
@@ -814,7 +915,69 @@ class _Run:
             rehearsal=self.rehearsal_trace,
             trace=self.target_trace,
             notes=tuple(self.notes),
+            stop_time_max_s=stop_time_max_s(self.description, self.settings),
+            call_time_longest_s=None if self.timer is None else self.timer.longest_s,
         )
+
+
+# -- timing every adapter call --------------------------------------------------------
+
+
+class _CallTooSlow(Exception):
+    """An adapter call took longer than the adapter's declared call_time_max_s."""
+
+    def __init__(
+        self,
+        name: str,
+        start_s: float,
+        end_s: float,
+        bound_s: float,
+        error: BaseException | None,
+    ) -> None:
+        self.name = name
+        self.start_s = start_s
+        self.end_s = end_s
+        self.took_s = end_s - start_s
+        self.bound_s = bound_s
+        self.error = error
+        raised = "" if error is None else f", and then raised {type(error).__name__}: {error}"
+        self.message = (
+            f"the adapter broke its contract: one {name} call took {_s(self.took_s)}, longer"
+            f" than the {_s(bound_s)} the adapter declares any call takes at most"
+            f" (call_time_max_s){raised}. The runner can act only between calls, so for that"
+            " long nothing watched the actuator and no stop request could be sent, and after it"
+            " nothing about the run's timing can be trusted"
+        )
+        super().__init__(self.message)
+
+
+class _CallTimer:
+    """Times every call to one adapter, on its clock, against its declared call_time_max_s."""
+
+    def __init__(self, adapter: Adapter, bound_s: float) -> None:
+        self.adapter = adapter
+        self.bound_s = bound_s
+        self.longest_s: float | None = None
+
+    @contextmanager
+    def timing(self, name: str) -> Iterator[None]:
+        """Around one call named ``name``: raises ``_CallTooSlow`` if it took too long,
+        whether it returned or raised (the error it raised is chained)."""
+        start_s = self.adapter.clock.now_s()
+        try:
+            yield
+        except BaseException as error:
+            self._took(name, start_s, error)
+            raise
+        self._took(name, start_s, None)
+
+    def _took(self, name: str, start_s: float, error: BaseException | None) -> None:
+        end_s = self.adapter.clock.now_s()
+        took_s = end_s - start_s
+        if self.longest_s is None or took_s > self.longest_s:
+            self.longest_s = took_s
+        if took_s > self.bound_s * (1 + 1e-9):
+            raise _CallTooSlow(name, start_s, end_s, self.bound_s, error) from error
 
 
 # -- running a plan on one adapter ----------------------------------------------------
@@ -876,20 +1039,27 @@ def _execute(
     trace: _TraceBuilder,
     period_s: float,
     stop_request: _StopRequest,
+    timer: _CallTimer,
 ) -> None:
     """Enable ``adapter`` and run ``plan`` under ``monitor``, recording into ``trace``.
 
-    Returns when the plan is done or the monitor stops it (``trace.stop``).
-    Exceptions propagate, with ``trace`` holding what happened up to then. The
-    caller enters the safe state.
+    Returns when the plan is done, the monitor stops it, or a call takes longer
+    than the adapter declares (``trace.stop``). Every call goes through
+    ``timer``. The time without a good reading is checked after every call and
+    at least once per declared call time while waiting, so the stop comes at
+    most one call time after ``sample_gap_max`` (see "Stop time" in the module
+    text). Exceptions propagate, with ``trace`` holding what happened up to
+    then. The caller enters the safe state.
     """
     clock = adapter.clock
+    timing = timer.timing
     try:
         # A reading just before enable: checked, recorded, and the position that
         # enable will hold.
         while True:
             try:
-                sample = adapter.read()
+                with timing("read"):
+                    sample = adapter.read()
             except CommunicationError as error:
                 if _missed(trace, monitor, clock, error, None):
                     return
@@ -922,7 +1092,8 @@ def _execute(
         trace.enable_position_rad = hold_rad
         monitor.hold(clock.now_s(), hold_rad)
         trace.t_enable_s = clock.now_s()  # set first: a failed enable may still have acted
-        adapter.enable()
+        with timing("enable"):
+            adapter.enable()
         t0_s = clock.now_s()
         trace.t_start_s = t0_s
         monitor.start(t0_s)
@@ -1014,13 +1185,20 @@ def _execute(
                 if violation is not None:
                     trace.stopped(violation)
                     return
-                sent_s = adapter.command(POSITION, value_rad)
+                with timing("command"):
+                    sent_s = adapter.command(POSITION, value_rad)
                 trace.commands.append(CommandRecord(sent_s, POSITION, value_rad, index))
                 monitor.on_command(sent_s, value_rad)
                 sent_segment = index
+                # A command is not a reading: check the time it took, too.
+                violation = monitor.check_time(clock.now_s())
+                if violation is not None:
+                    trace.stopped(violation)
+                    return
 
             try:
-                sample = adapter.read()
+                with timing("read"):
+                    sample = adapter.read()
             except CommunicationError as error:
                 if _missed(trace, monitor, clock, error, index):
                     return
@@ -1034,7 +1212,8 @@ def _execute(
             if clock.now_s() >= next_poll_s:
                 next_poll_s = clock.now_s() + FAULT_POLL_INTERVAL_S
                 try:
-                    faults = adapter.read_faults()
+                    with timing("read_faults"):
+                        faults = adapter.read_faults()
                 except CommunicationError as error:
                     if _missed(trace, monitor, clock, error, index, poll=True):
                         return
@@ -1044,7 +1223,30 @@ def _execute(
                         trace.stopped(violation)
                         return
 
-            clock.wait_until_s(now_s + period_s)
+            # Wait for the next pass, looking at the time at least once per
+            # declared call time, so a wait never delays a stop more than a call.
+            wake_s = now_s + period_s
+            while clock.now_s() < wake_s:
+                clock.wait_until_s(min(wake_s, clock.now_s() + timer.bound_s))
+                violation = monitor.check_time(clock.now_s())
+                if violation is not None:
+                    trace.stopped(violation)
+                    return
+    except _CallTooSlow as slow:
+        # After enable was called the actuator may be enabled: a stop of the run.
+        enabled = trace.t_enable_s is not None
+        started = trace.t_start_s is not None
+        trace.stop = StopReason(
+            CALL_TIME_EXCEEDED,
+            RUN if enabled else PREFLIGHT,
+            slow.message,
+            slow.end_s,
+            slow.end_s - trace.t_start_s if started else None,
+            trace.segment_at(slow.end_s),
+            slow.took_s,
+            slow.bound_s,
+            "s",
+        )
     finally:
         trace.t_end_s = _now(clock)
 
@@ -1093,12 +1295,22 @@ def _rehearsal_servo(
 # -- the safe state ------------------------------------------------------------------
 
 
-def _enter_safe_state(adapter: Adapter) -> SafeStateReport:
-    """Enter the safe state, retrying. Never raises; the report says what happened."""
+def _enter_safe_state(
+    adapter: Adapter, call_time_max_s: float | None = None, notes: list[str] | None = None
+) -> SafeStateReport:
+    """Enter the safe state, retrying. Never raises; the report says what happened.
+
+    An attempt that takes longer than ``call_time_max_s`` is not retried for
+    that alone (the safe state comes first), but it is noted in ``notes``.
+    """
     errors: list[str] = []
     for attempt in range(1, SAFE_STATE_ATTEMPTS + 1):
         try:
-            adapter.enter_safe_state()
+            start_s = _now(adapter.clock)
+            try:
+                adapter.enter_safe_state()
+            finally:
+                _note_slow_safe_state(adapter, attempt, start_s, call_time_max_s, notes)
         except BaseException as error:  # noqa: BLE001 - Ctrl-C included: keep trying
             errors.append(f"attempt {attempt}: {type(error).__name__}: {error}")
             if attempt < SAFE_STATE_ATTEMPTS:
@@ -1113,6 +1325,23 @@ def _enter_safe_state(adapter: Adapter) -> SafeStateReport:
             t_s = None
         return SafeStateReport(SafeState.CONFIRMED, attempt, tuple(errors), t_s)
     return SafeStateReport(SafeState.NOT_CONFIRMED, SAFE_STATE_ATTEMPTS, tuple(errors))
+
+
+def _note_slow_safe_state(
+    adapter: Adapter,
+    attempt: int,
+    start_s: float | None,
+    bound_s: float | None,
+    notes: list[str] | None,
+) -> None:
+    end_s = _now(adapter.clock)
+    if notes is None or start_s is None or end_s is None or not _valid_time(bound_s):
+        return
+    if end_s - start_s > bound_s * (1 + 1e-9):
+        notes.append(
+            f"the adapter broke its contract: safe-state attempt {attempt} took"
+            f" {_s(end_s - start_s)}, longer than its declared call_time_max_s {_s(bound_s)}"
+        )
 
 
 @contextmanager
@@ -1187,6 +1416,15 @@ def _params_note(params: ServoParams) -> str:
     if params == DEFAULT_PARAMS:
         return "default placeholder model parameters, not measured on any real servo"
     return "the model parameters given for the rehearsal"
+
+
+def _valid_time(value: object) -> bool:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        and value > 0
+    )
 
 
 def _now(clock: Clock) -> float | None:
