@@ -89,8 +89,11 @@ runner with ``note_previous_run``. With no such record, only
 ignored. When the tool cannot establish when the actuator last ran, it assumes
 the worse case (``records.records_for_cooldown``): a directory named like a run
 record whose run.json cannot be read counts as a run of this actuator that
-ended at the time in its name, or just now if that time is not valid or is in
-the future. If such a record holds the cool-down, the runner's refusal (with
+ended at the end of the second given by the time in its name (the name holds
+whole seconds, cut down, so the start of that second may be before the run
+ended), or just now while that second is the current one, or just now on every
+run if that time is not valid or is in the future (``UnreadableRecord.assumed_end``).
+If such a record holds the cool-down, the runner's refusal (with
 ``when_too_warm = "refuse"``) or check's summary (with ``"wait"``) names it and
 says how the owner gets out of it: repair its run.json, or move the directory
 out of ``runs/``. A record that holds the cool-down on every run (no usable
@@ -865,13 +868,12 @@ class _Check:
         if found.latest is not None:
             candidates.append((found.latest.ended_utc, found.latest.path, None))
         for record in found.unreadable:
-            named = record.named_utc
-            assumed = named if named is not None and named <= now else now
+            assumed, how = record.assumed_end(now)
             candidates.append((assumed, record.path, record))
             self.notes.append(
                 f"The run record {record.path} cannot be read ({record.problem}); for the"
                 f" cool-down it counts as a run of this actuator that ended"
-                + (" just now." if assumed is now else f" at {_utc(assumed)}.")
+                + (f" at {_utc(assumed)}." if how == records.ENDED_BY_NAME else " just now.")
             )
         unreadable = [str(record.path) for record in found.unreadable]
         not_runs = [str(path) for path in found.not_runs]
@@ -924,18 +926,27 @@ class _Check:
         """Why an unreadable record holds the cool-down, what the owner can do, and whether
         it will hold it on every run until they do."""
         named = record.named_utc
+        assumed, how = record.assumed_end(now)
         unreadable = f"the run record {record.path} cannot be read ({record.problem})"
-        if named is not None and named <= now:
-            cause = (
-                f"{unreadable}, so it is taken as a run of this actuator that ended at the time"
-                f" in its name, {_utc(named)}"
-            )
+        if how in (records.ENDED_BY_NAME, records.ENDED_THIS_SECOND):
+            if how == records.ENDED_BY_NAME:
+                cause = (
+                    f"{unreadable}, so it is taken as a run of this actuator that ended at"
+                    f" {_utc(assumed)}, the end of the second given by the time in its name"
+                    f" ({_utc(named)}; the name holds whole seconds)"
+                )
+            else:
+                cause = (
+                    f"{unreadable}, so it is taken as a run of this actuator that has just"
+                    f" ended: the time in its name, {_utc(named)}, is the current second (the"
+                    " name holds whole seconds)"
+                )
             remedy = (
                 f"to stop it holding the cool-down, repair its {records.RUN_FILE} or move"
                 f" {record.path} out of {self.runs_dir}/, once you know when the actuator last ran"
             )
             return cause, remedy, False
-        if named is None:
+        if how == records.NAME_TIME_INVALID:
             cause = (
                 f"{unreadable} and the time in its name is not a valid time, so it is taken as"
                 " a run of this actuator that has just ended"

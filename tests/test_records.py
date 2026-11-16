@@ -376,3 +376,32 @@ def test_the_cool_down_counts_an_unreadable_record_at_the_time_in_its_name(compl
         spoiled
     ]
     assert records.records_for_cooldown("sim", "1", tmp_path / "none").latest is None
+
+
+# == Regressions from the third outside review, 2026-11-16 ============================
+
+
+def test_an_unreadable_record_is_taken_to_end_at_the_end_of_the_second_in_its_name():
+    from pathlib import Path
+
+    def at(seconds):
+        return datetime.datetime(2026, 11, 16, 12, 0, tzinfo=datetime.UTC) + datetime.timedelta(
+            seconds=seconds
+        )
+
+    record = records.UnreadableRecord(Path("runs/x"), "broken", at(0))
+    assert record.written_by_utc == at(1)
+    # The second has passed: the end of it, never its start.
+    assert record.assumed_end(at(1.2)) == (at(1), records.ENDED_BY_NAME)
+    assert record.assumed_end(at(1)) == (at(1), records.ENDED_BY_NAME)
+    # The second is the current one: just now, and not a record with no usable time.
+    assert record.assumed_end(at(0.85)) == (at(0.85), records.ENDED_THIS_SECOND)
+    assert record.assumed_end(at(0)) == (at(0), records.ENDED_THIS_SECOND)
+    # A second that has not begun, or no valid time: just now, on every run.
+    assert record.assumed_end(at(-0.001)) == (at(-0.001), records.NAME_TIME_FUTURE)
+    invalid = records.UnreadableRecord(Path("runs/y"), "broken", None)
+    assert invalid.written_by_utc is None
+    assert invalid.assumed_end(at(5)) == (at(5), records.NAME_TIME_INVALID)
+    named = records._name_time("99991231T235959Z")  # the last second there is
+    last = records.UnreadableRecord(Path("runs/z"), "broken", named)
+    assert last.assumed_end(at(5)) == (at(5), records.NAME_TIME_FUTURE)  # no overflow

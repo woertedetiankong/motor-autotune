@@ -60,9 +60,14 @@ not JSON, not UTF-8, an unknown format, a missing field, a time without a time
 zone) cannot say. The tool then assumes the worse case: a directory whose name
 starts as a run directory's does (``<UTC date and time>-``) and whose run.json
 cannot be read counts as a run of this actuator, whatever target its name
-gives, that ended at the time in its name, which is when its record was
-written and so no earlier than the run ended; if the name's time is not a valid
-time, the run counts as having just ended. A directory not named like that was
+gives, that ended at the end of the second the time in its name gives. The name
+holds whole seconds, cut down from the moment the record was written (a record
+written at 12:00:00.800 is named 120000Z), so the start of that second can be up
+to a second earlier than the run really ended, the unsafe direction; the end of
+it is no earlier than the record was written, which is after the run ended.
+While that second is the current one, the run counts as having just ended. If
+the name's time is not a valid time, or a second that has not begun yet, the
+run counts as having just ended on every run. A directory not named like that was
 not written by the tool and is not a run: it is listed, and does not count.
 ``records_for_cooldown`` gives all three.
 """
@@ -130,9 +135,18 @@ DEFAULT_VERDICTS = {
 }
 
 _SAMPLE_META = ("t_s", "elapsed_s", "segment")
-# Every run directory's name starts with the UTC time it was written.
+# Every run directory's name starts with the UTC time it was written, in whole
+# seconds: the fraction is dropped, so the name gives the start of the second in
+# which the record was written, and the record was written before that second ended.
 _NAME_TIME_FORMAT = "%Y%m%dT%H%M%SZ"
+_NAME_TIME_STEP = datetime.timedelta(seconds=1)
 _RUN_NAME = re.compile(r"(\d{8}T\d{6}Z)-")
+
+# How an unreadable record's end was assumed (UnreadableRecord.assumed_end).
+ENDED_BY_NAME = "ended_by_name"  # the end of the second in its name, which has passed
+ENDED_THIS_SECOND = "ended_this_second"  # its name's second is the current one: just now
+NAME_TIME_INVALID = "name_time_invalid"  # no valid time in its name: just now, every run
+NAME_TIME_FUTURE = "name_time_future"  # its name's second has not begun: just now, every run
 
 
 class RecordError(Exception):
@@ -145,7 +159,43 @@ class UnreadableRecord:
 
     path: Path
     problem: str  # why it cannot be read
-    named_utc: datetime.datetime | None  # the time in its name; None if not a valid time
+    # The time in its name, which is the start of a whole second; None if not a valid time.
+    named_utc: datetime.datetime | None
+
+    @property
+    def written_by_utc(self) -> datetime.datetime | None:
+        """The latest this record can have been written: the end of the second in its name.
+
+        A run's record is written after the run ended, so its run ended no later
+        than this either. None if the name holds no valid time.
+        """
+        if self.named_utc is None:
+            return None
+        try:
+            return self.named_utc + _NAME_TIME_STEP
+        except OverflowError:  # the last second of year 9999: never reached
+            return datetime.datetime.max.replace(tzinfo=datetime.UTC)
+
+    def assumed_end(self, now: datetime.datetime) -> tuple[datetime.datetime, str]:
+        """When, for the cool-down, this record's run is taken to have ended, and why.
+
+        The worse case that the name allows: the end of the second in its name
+        (``ENDED_BY_NAME``), but never later than ``now``, since the record was
+        written before now. While that second is still the current one, that is
+        just now (``ENDED_THIS_SECOND``); once it has passed, the end is fixed,
+        and the cool-down runs out. With no valid time in the name
+        (``NAME_TIME_INVALID``), or a second that has not begun yet
+        (``NAME_TIME_FUTURE``: the computer's clock was changed), it is just now
+        on every run, until the owner repairs or moves the record.
+        """
+        if self.named_utc is None:
+            return now, NAME_TIME_INVALID
+        if self.named_utc > now:
+            return now, NAME_TIME_FUTURE
+        written_by = self.written_by_utc
+        if written_by > now:
+            return now, ENDED_THIS_SECOND
+        return written_by, ENDED_BY_NAME
 
 
 @dataclass(frozen=True)
@@ -516,6 +566,10 @@ def records_for_cooldown(
 
 
 def _name_time(text: str) -> datetime.datetime | None:
+    """The time in a run directory's name: the start of the second it names, not an end.
+
+    For when a run ended, use ``UnreadableRecord.assumed_end``.
+    """
     try:
         return datetime.datetime.strptime(text, _NAME_TIME_FORMAT).replace(tzinfo=datetime.UTC)
     except ValueError:

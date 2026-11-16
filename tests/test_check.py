@@ -560,8 +560,9 @@ def test_a_call_slower_than_declared_is_a_device_problem_exit_4():
 # When the tool cannot establish when the actuator last ran, it assumes the
 # worse case: a directory under runs/ named like a run (by the time it was
 # written) whose run.json cannot be read counts as a run of this actuator that
-# ended at the time in its name, or just now if its name holds no valid time
-# or a time in the future. A directory not named like a run is not one.
+# ended at the end of the second the time in its name gives (just now while that
+# second is the current one), or just now if its name holds no valid time or a
+# time in the future. A directory not named like a run is not one.
 
 REFUSE = {"when_too_warm": '"refuse"'}
 
@@ -640,3 +641,70 @@ def test_a_stray_directory_that_is_not_a_run_does_not_hold_the_cool_down(here, c
     code, output = check(here, capsys, **REFUSE)
     assert code == 0, output["summary"]
     assert any("notes" in note and "not a run" in note for note in output["metrics"]["notes"])
+
+
+# == Regressions from the third outside review, 2026-11-16 ============================
+#
+# A run directory's name holds whole seconds, cut down from the moment the
+# record was written. Taking the start of that second as the run's end placed
+# it up to a second too early, so a corrupt record could let the cool-down run
+# out before it really had. It now counts from the end of that second, and
+# while that second is the current one, from just now.
+
+
+class _Calendar:
+    """The computer's calendar clock, set by the test."""
+
+    def __init__(self, when):
+        self.when = when
+
+    def __call__(self):
+        return self.when
+
+
+@pytest.fixture
+def calendar(monkeypatch):
+    import datetime
+
+    clock = _Calendar(datetime.datetime(2026, 11, 16, 12, 0, 0, tzinfo=datetime.UTC))
+    monkeypatch.setattr(records, "utc_now", clock)
+    monkeypatch.setattr(check_module, "utc_now", clock)
+    return clock
+
+
+@pytest.mark.parametrize("when_too_warm", ["refuse", "wait"])
+@pytest.mark.parametrize("later_s", [0.05, 0.4], ids=["same second", "next second"])
+def test_an_unreadable_record_ending_part_way_through_a_second_still_holds_the_cool_down(
+    here, capsys, calendar, when_too_warm, later_s
+):
+    import datetime
+
+    settings = {"cooldown": '"500 ms"', "when_too_warm": f'"{when_too_warm}"'}
+    start = calendar.when
+    calendar.when = start + datetime.timedelta(seconds=0.8)  # the run ends at 12:00:00.800
+    code, first = check(here, capsys, **settings)
+    assert code == 0, first["summary"]
+    assert first["run_dir"].endswith("20261116T120000Z-check-sim-1")  # named by whole seconds
+    _spoil(here / first["run_dir"], "not json")
+    calendar.when += datetime.timedelta(seconds=later_s)
+    code, second = check(here, capsys, **settings)
+    cooldown = second["metrics"]["cooldown"]
+    assert cooldown["previous_run"] == first["run_dir"]
+    assert cooldown["previous_run_readable"] is False
+    # Never less rest than the readable record would have given (0.5 s - later_s).
+    assert cooldown["rest_left_s"] >= 0.5 - later_s - 1e-9, cooldown
+    assert datetime.datetime.fromisoformat(cooldown["previous_run_ended_utc"]) >= calendar.when - (
+        datetime.timedelta(seconds=later_s)
+    )
+    # A record written within the current second is not one with no usable time.
+    assert cooldown["holds_until_fixed"] is False and second["needs_human"] is False
+    if when_too_warm == "refuse":
+        assert code == 3, second["summary"]
+        assert second["metrics"]["run"]["stop_kind"] == runner.COOLDOWN
+        message = second["metrics"]["run"]["stop_message"]
+        assert first["run_dir"] in message and "time in its name" in message
+        assert "every run" not in message
+    else:
+        assert code == 0, second["summary"]
+        assert second["metrics"]["run"]["cooled_s"] >= 0.5 - later_s - 1e-9
+        assert "Waited" in second["summary"] and first["run_dir"] in second["summary"]
