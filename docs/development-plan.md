@@ -24,7 +24,7 @@ Steps 1 to 8 need no hardware. Step 9 needs a document from the owner. Steps 10 
 - [x] 1. Project skeleton
 - [x] 2. Units and bench limits
 - [x] 3. Adapter contract, clocks and the simulated servo
-- [ ] 4. Experiment runner and safety monitor
+- [x] 4. Experiment runner and safety monitor
 - [ ] 5. Run records and plots
 - [ ] 6. Analysis: step response and frequency response
 - [ ] 7. Command line and `check`, on the simulated servo
@@ -70,7 +70,8 @@ src/servobench/
     hd1910.py         HD1910 register map and adapter    (steps 9 to 11)
   experiments/
     spec.py           experiment definitions: hold, step, stepped sine
-    runner.py         rehearsal, safety monitor, thermal budget, abort
+    runner.py         rehearsal, thermal budget, abort, safe state on every exit
+    monitor.py        the safety monitor's checks (no device calls)
   analysis/
     step.py           step-response metrics
     frequency.py      gain and phase from stepped sine
@@ -416,6 +417,12 @@ Design choices in the servo stage that this depends on: the narrow adapter contr
 ## Notes for the next session
 
 Add dated, one-line notes here when a step leaves something the next session must know.
+
+- 2026-11-16: Two paths reach an actuator outside `run_experiment`, reported to the owner at step 4 and not yet decided: the conformance suite's `motion` tests command the adapter directly (step 11 runs them on the real servo), and `write_parameter` is not routed through the runner (step 13 writes gains; rehearse them by passing `rehearsal_params`, and settle with the owner how the write itself is guarded).
+- 2026-11-16: `run_experiment` enters the safe state (torque off) on every exit, refusals included, so it must never be used on the assembled Microduck; step 14 stays read-only and must not call it.
+- 2026-11-16: The time-based cool-down is remembered per adapter object in one process only (adapter clocks are not comparable across processes). A CLI that runs one experiment per invocation (step 7) gets only the `start_temperature_max` check unless it also reads the previous run record's end time.
+- 2026-11-16: The monitor refuses an adapter that cannot read `current_a`, `voltage_v` and `temperature_degc`. If the HD1910 reports only a raw "load" (step 9), how `current_max` is enforced is a decision for the owner, not a check to drop.
+- 2026-11-16: Suggested step-7 mapping of `Outcome` to exit codes: completed 0 or 1 (by analysis); refused with stop kind `spec_invalid` or `adapter_unsuitable` 2; other refusals, aborted and interrupted 3; error 4; `safe_state_not_confirmed` 4 with the summary shown first and in full.
 
 - 2026-11-16: On the default simulated servo, any step big enough to saturate the torque limit (above about 32 deg) peaks above 380 deg/s, past the template's 180 deg/s `speed_max`; a saturating experiment for step 8's torque-limit identification would be aborted by the safety monitor under the template's limits, so it needs a decision (a bench file with a higher speed limit for that test, or another experiment), not a loosened check.
 - 2026-11-16: `model.py` assumes the pendulum arm hangs straight down at position zero and is a point mass at its centre of mass (inertia m L^2). The bench rig must be mounted that way, or the bench file needs a hanging-angle setting, before step 11; raise it with the owner then.

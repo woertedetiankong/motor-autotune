@@ -53,6 +53,37 @@ class Limits:
     voltage_max_v: float
     experiment_max_s: float
     cooldown_s: float
+    # No experiment starts while the actuator is hotter than this.
+    start_temperature_max_degc: float
+    # Every commanded position stays at least this far inside the travel range.
+    command_margin_rad: float
+    # The actuator must follow its command: the position reading may be at most
+    # follow_error_max_rad outside the range of positions commanded during the
+    # last follow_time_max_s, and must change within follow_time_max_s of a
+    # commanded move larger than follow_error_max_rad.
+    follow_error_max_rad: float
+    follow_time_max_s: float
+
+
+WAIT = "wait"
+REFUSE = "refuse"
+WHEN_TOO_WARM = (WAIT, REFUSE)
+
+
+@dataclass(frozen=True)
+class RunnerSettings:
+    """How the experiment runner behaves, from the [runner] section."""
+
+    # A run is stopped when more than this many reads in a row get no reply.
+    missed_replies_max: int
+    # Speed of the ramp from where the actuator is to where the experiment starts.
+    approach_speed_rad_s: float
+    # When an experiment is due to start inside the cool-down, or while the
+    # actuator is above start_temperature_max: "wait" (at rest, in the safe
+    # state) or "refuse".
+    when_too_warm: str
+    # The longest the runner waits for the actuator to cool before refusing.
+    cool_wait_max_s: float
 
 
 @dataclass(frozen=True)
@@ -85,6 +116,7 @@ class SimSettings:
 class Bench:
     target: Target
     limits: Limits
+    runner: RunnerSettings
     load: Load | None
     fingerprint: str
     source: str
@@ -102,6 +134,17 @@ LIMIT_FIELDS: tuple[tuple[str, str, Dimension], ...] = (
     ("voltage_max", "voltage_max_v", Dimension.VOLTAGE),
     ("experiment_max", "experiment_max_s", Dimension.TIME),
     ("cooldown", "cooldown_s", Dimension.TIME),
+    ("start_temperature_max", "start_temperature_max_degc", Dimension.TEMPERATURE),
+    ("command_margin", "command_margin_rad", Dimension.ANGLE),
+    ("follow_error_max", "follow_error_max_rad", Dimension.ANGLE),
+    ("follow_time_max", "follow_time_max_s", Dimension.TIME),
+)
+
+# The quantities of the [runner] section. Its other keys are missed_replies_max
+# (a whole number of replies) and when_too_warm (a word).
+RUNNER_FIELDS: tuple[tuple[str, str, Dimension], ...] = (
+    ("approach_speed", "approach_speed_rad_s", Dimension.ANGULAR_VELOCITY),
+    ("cool_wait_max", "cool_wait_max_s", Dimension.TIME),
 )
 
 LOAD_FIELDS: tuple[tuple[str, str, Dimension], ...] = (
@@ -132,7 +175,8 @@ SIM_FAULTS: dict[str, str] = {
 SIM_ADAPTER = "sim"
 _TARGET_KEYS = ("adapter", "port", "id")
 _SIM_KEYS = ("faults", "seed", "noise") + tuple(key for key, _, _ in SIM_FIELDS)
-_SECTIONS = ("target", "limits", "load", "sim")
+_RUNNER_KEYS = ("missed_replies_max", "when_too_warm") + tuple(key for key, _, _ in RUNNER_FIELDS)
+_SECTIONS = ("target", "limits", "runner", "load", "sim")
 
 
 def fingerprint(data: bytes) -> str:
@@ -169,6 +213,7 @@ def parse_bench(data: bytes, source: str = BENCH_FILENAME) -> Bench:
     target = _read_target(_section(document, "target", problems, required=True), problems)
     limits_table = _section(document, "limits", problems, required=True)
     limits = _read_quantities(limits_table, "limits", LIMIT_FIELDS, problems)
+    runner = _read_runner(_section(document, "runner", problems, required=True), problems)
     load_table = _section(document, "load", problems, required=False)
     load = _read_quantities(load_table, "load", LOAD_FIELDS, problems)
 
@@ -182,14 +227,18 @@ def parse_bench(data: bytes, source: str = BENCH_FILENAME) -> Bench:
 
     if limits is not None:
         _check_limits(limits, problems)
+    if limits is not None and runner is not None:
+        if runner.approach_speed_rad_s > limits["speed_max"]:
+            problems.append("[runner] approach_speed must not be above [limits] speed_max")
     if load is not None:
         _check_positive(load, "load", ("mass", "length"), problems)
 
-    if problems or target is None or limits is None or sim is None:
+    if problems or target is None or limits is None or runner is None or sim is None:
         raise BenchFileError(source, problems)
     return Bench(
         target=target,
         limits=Limits(**_by_attribute(limits, LIMIT_FIELDS)),
+        runner=runner,
         load=None if load is None else Load(**_by_attribute(load, LOAD_FIELDS)),
         fingerprint=fingerprint(data),
         source=source,
@@ -245,10 +294,13 @@ def _read_quantities(
     section: str,
     fields: tuple[tuple[str, str, Dimension], ...],
     problems: list[str],
+    *,
+    check_unknown: bool = True,
 ) -> dict[str, float] | None:
     if table is None:
         return None
-    _check_unknown(table, section, tuple(key for key, _, _ in fields), problems)
+    if check_unknown:
+        _check_unknown(table, section, tuple(key for key, _, _ in fields), problems)
     values: dict[str, float] = {}
     for key, _, dimension in fields:
         if key not in table:
@@ -326,6 +378,54 @@ def _read_sim(table: dict | None, problems: list[str]) -> SimSettings | None:
     return SimSettings(**values) if ok else None
 
 
+def _read_runner(table: dict | None, problems: list[str]) -> RunnerSettings | None:
+    if table is None:
+        return None
+    _check_unknown(table, "runner", _RUNNER_KEYS, problems)
+    ok = True
+
+    missed = table.get("missed_replies_max")
+    if missed is None:
+        problems.append(
+            "[runner] missed_replies_max is missing; expected a whole number of replies, for"
+            " example 3"
+        )
+        ok = False
+    elif isinstance(missed, bool) or not isinstance(missed, int) or missed < 0:
+        problems.append(
+            f"[runner] missed_replies_max must be a whole number of replies, 0 or more,"
+            f" got {missed!r}"
+        )
+        ok = False
+
+    when = table.get("when_too_warm")
+    if when is None:
+        problems.append(
+            f'[runner] when_too_warm is missing; expected "{WAIT}" or "{REFUSE}"'
+        )
+        ok = False
+    elif when not in WHEN_TOO_WARM:
+        problems.append(f'[runner] when_too_warm must be "{WAIT}" or "{REFUSE}", got {when!r}')
+        ok = False
+
+    quantities = _read_quantities(table, "runner", RUNNER_FIELDS, problems, check_unknown=False)
+    if quantities is None:
+        return None
+    if quantities["approach_speed"] <= 0:
+        problems.append("[runner] approach_speed must be greater than zero")
+        ok = False
+    if quantities["cool_wait_max"] < 0:
+        problems.append("[runner] cool_wait_max must not be negative")
+        ok = False
+    if not ok:
+        return None
+    return RunnerSettings(
+        missed_replies_max=missed,
+        when_too_warm=when,
+        **_by_attribute(quantities, RUNNER_FIELDS),
+    )
+
+
 def _check_unknown(table: dict, section: str, known: tuple[str, ...], problems: list[str]) -> None:
     for key in table:
         if key not in known:
@@ -337,9 +437,24 @@ def _check_limits(limits: dict[str, float], problems: list[str]) -> None:
         problems.append("[limits] position_min must be less than position_max")
     if limits["voltage_min"] >= limits["voltage_max"]:
         problems.append("[limits] voltage_min must be less than voltage_max")
-    _check_positive(limits, "limits", ("speed_max", "current_max", "experiment_max"), problems)
+    _check_positive(
+        limits,
+        "limits",
+        ("speed_max", "current_max", "experiment_max", "follow_error_max", "follow_time_max"),
+        problems,
+    )
     if limits["cooldown"] < 0:
         problems.append("[limits] cooldown must not be negative")
+    if limits["start_temperature_max"] >= limits["temperature_max"]:
+        problems.append("[limits] start_temperature_max must be less than temperature_max")
+    margin = limits["command_margin"]
+    if margin < 0:
+        problems.append("[limits] command_margin must not be negative")
+    elif limits["position_min"] + margin >= limits["position_max"] - margin:
+        problems.append(
+            "[limits] command_margin leaves no room to command: position_min + command_margin"
+            " must be less than position_max - command_margin"
+        )
 
 
 def _check_positive(
@@ -373,7 +488,8 @@ TEMPLATE = """\
 # bench power supply with its current limit set, and your hand on the power.
 #
 # Every quantity is a string with a unit, for example "45 deg" or "300 ms".
-# A bare number is an error.
+# A bare number is an error. The only bare numbers are counts and identifiers,
+# which have no unit: missed_replies_max, id and seed.
 #   angle: deg, rad    speed: deg/s, rad/s, rpm    time: ms, s, min
 #   voltage: V, mV     current: A, mA              temperature: degC
 #   mass: g, kg        length: mm, cm, m
@@ -403,10 +519,40 @@ temperature_max = "60 degC"
 # Supply voltage range; outside it nothing runs.
 voltage_min = "6 V"
 voltage_max = "8.4 V"
-# Longest single experiment.
+# Longest single experiment, from the moment the actuator is enabled.
 experiment_max = "30 s"
 # Rest between one experiment and the next.
 cooldown = "60 s"
+# No experiment starts while the actuator is hotter than this. Keep it well
+# below temperature_max, so an experiment has room to warm the actuator.
+start_temperature_max = "45 degC"
+# Every commanded position stays at least this far inside the travel range,
+# leaving room for overshoot. With the values above: -80 deg to 80 deg.
+command_margin = "10 deg"
+# The actuator must follow its commands. A run stops if the position reading
+# is more than follow_error_max outside the positions commanded during the
+# last follow_time_max, or if the reading does not change at all within
+# follow_time_max of a commanded move larger than follow_error_max. This
+# catches a servo that ignores its commands, turns the wrong way, or whose
+# position reading has frozen. follow_error_max must be larger than the
+# overshoot and the sag under the load that you expect.
+follow_error_max = "5 deg"
+follow_time_max = "1 s"
+
+[runner]
+# How the experiment runner behaves.
+#
+# A run stops when more than this many reads in a row get no reply.
+# A whole number of replies, written without quotes.
+missed_replies_max = 3
+# Before an experiment, the actuator is moved from where it is to where the
+# experiment starts by a ramp at this speed. At most speed_max.
+approach_speed = "20 deg/s"
+# When an experiment is due to start inside the cool-down, or while the
+# actuator is hotter than start_temperature_max: "wait" (at rest, in its safe
+# state, for at most cool_wait_max) or "refuse".
+when_too_warm = "wait"
+cool_wait_max = "10 min"
 
 [load]
 # What is attached to the output. For the bench rig, the pendulum arm:

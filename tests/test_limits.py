@@ -7,10 +7,12 @@ import pytest
 from servobench.limits import (
     LIMIT_FIELDS,
     LOAD_FIELDS,
+    RUNNER_FIELDS,
     TEMPLATE,
     BenchFileError,
     Limits,
     Load,
+    RunnerSettings,
     SimSettings,
     Target,
     load_bench,
@@ -45,6 +47,16 @@ def test_template_loads_with_si_values():
         voltage_max_v=8.4,
         experiment_max_s=30.0,
         cooldown_s=60.0,
+        start_temperature_max_degc=45.0,
+        command_margin_rad=pytest.approx(math.radians(10.0)),
+        follow_error_max_rad=pytest.approx(math.radians(5.0)),
+        follow_time_max_s=1.0,
+    )
+    assert bench.runner == RunnerSettings(
+        missed_replies_max=3,
+        approach_speed_rad_s=pytest.approx(math.radians(20.0)),
+        when_too_warm="wait",
+        cool_wait_max_s=600.0,
     )
     assert bench.load == Load(mass_kg=pytest.approx(0.05), length_m=pytest.approx(0.1))
     assert bench.sim == SimSettings()
@@ -52,7 +64,8 @@ def test_template_loads_with_si_values():
 
 
 def test_template_sets_every_field():
-    for key, _, _ in LIMIT_FIELDS + LOAD_FIELDS:
+    keys = [key for key, _, _ in LIMIT_FIELDS + RUNNER_FIELDS + LOAD_FIELDS]
+    for key in keys + ["missed_replies_max", "when_too_warm"]:
         assert re.search(rf"^{key} = ", TEMPLATE, flags=re.MULTILINE), key
 
 
@@ -125,10 +138,61 @@ def test_unknown_section_rejected():
         ("experiment_max", 'experiment_max = "0 s"', "experiment_max must be greater than zero"),
         ("cooldown", 'cooldown = "-1 s"', "cooldown must not be negative"),
         ("mass", 'mass = "0 g"', "[load] mass must be greater than zero"),
+        (
+            "start_temperature_max",
+            'start_temperature_max = "60 degC"',
+            "start_temperature_max must be less than temperature_max",
+        ),
+        ("command_margin", 'command_margin = "-1 deg"', "command_margin must not be negative"),
+        ("command_margin", 'command_margin = "90 deg"', "command_margin leaves no room"),
+        ("follow_error_max", 'follow_error_max = "0 deg"', "follow_error_max must be greater"),
+        ("follow_time_max", 'follow_time_max = "0 s"', "follow_time_max must be greater"),
+        ("approach_speed", 'approach_speed = "0 deg/s"', "approach_speed must be greater"),
+        (
+            "approach_speed",
+            'approach_speed = "200 deg/s"',
+            "approach_speed must not be above [limits] speed_max",
+        ),
+        ("cool_wait_max", 'cool_wait_max = "-1 s"', "cool_wait_max must not be negative"),
     ],
 )
 def test_inconsistent_values_rejected(key, line, expected):
     assert expected in problems_for(edit(TEMPLATE, key, line))
+
+
+@pytest.mark.parametrize("key", [key for key, _, _ in RUNNER_FIELDS])
+def test_missing_runner_quantity_rejected_naming_it(key):
+    assert f"[runner] {key} is missing" in problems_for(edit(TEMPLATE, key, ""))
+
+
+@pytest.mark.parametrize(
+    ("key", "line", "expected"),
+    [
+        ("missed_replies_max", "", "[runner] missed_replies_max is missing"),
+        ("missed_replies_max", 'missed_replies_max = "3"', "must be a whole number of replies"),
+        ("missed_replies_max", "missed_replies_max = -1", "must be a whole number of replies"),
+        ("missed_replies_max", "missed_replies_max = 2.5", "must be a whole number of replies"),
+        ("missed_replies_max", "missed_replies_max = true", "must be a whole number of replies"),
+        ("when_too_warm", "", "[runner] when_too_warm is missing"),
+        ("when_too_warm", 'when_too_warm = "ignore"', 'must be "wait" or "refuse"'),
+        ("approach_speed", "approach_speed = 20", "approach_speed: 20 is a bare number"),
+        ("cool_wait_max", 'cool_wait_max = "10 deg"', "expected a time"),
+    ],
+)
+def test_bad_runner_settings_rejected(key, line, expected):
+    assert expected in problems_for(edit(TEMPLATE, key, line))
+
+
+def test_runner_section_is_required_and_checked_for_unknown_keys():
+    start, end = TEMPLATE.index("[runner]"), TEMPLATE.index("[load]")
+    assert "section [runner] is missing" in problems_for(TEMPLATE[:start] + TEMPLATE[end:])
+    text = TEMPLATE.replace("[runner]\n", '[runner]\nskip_rehearsal = true\n')
+    assert "[runner] unknown key 'skip_rehearsal'" in problems_for(text)
+
+
+def test_when_too_warm_refuse_is_accepted():
+    bench = parse_bench(edit(TEMPLATE, "when_too_warm", 'when_too_warm = "refuse"').encode())
+    assert bench.runner.when_too_warm == "refuse"
 
 
 @pytest.mark.parametrize(
