@@ -281,3 +281,37 @@ def test_template_lists_every_fault():
 
     for fault in SIM_FAULTS:
         assert re.search(rf'^#\s+"{fault}"', TEMPLATE, flags=re.MULTILINE), fault
+
+
+# == Added in plan step 8: backlash, for testing the model fit ======================
+
+
+def test_without_backlash_the_simulator_is_unchanged():
+    plain = step_response(SimServo(EXACT, load=LOAD), math.radians(10))
+    zero = step_response(
+        SimServo(dataclasses.replace(EXACT, backlash_rad=0.0), load=LOAD), math.radians(10)
+    )
+    assert [s.values for s in plain] == [s.values for s in zero]
+
+
+def test_backlash_makes_the_reading_lag_a_reversal_by_the_play():
+    play_rad = math.radians(1.0)
+    config = dataclasses.replace(EXACT, backlash_rad=play_rad)
+    servo = SimServo(config, load=PendulumLoad())  # no gravity to hold the output to one side
+    exact = SimServo(EXACT, load=PendulumLoad())
+    readings = []
+    for each in (servo, exact):
+        each.enable()
+        for target_deg in (5.0, 0.0):
+            each.command(POSITION, math.radians(target_deg))
+            each.clock.wait_s(1.0)
+        readings.append(each.read()[POSITION])
+    # Up to 5 deg and back to 0: the motor side returns to 0, the output is
+    # left behind by half the play on the way up and the whole play on the way
+    # back, so it reads half the play above zero.
+    assert readings[0] - readings[1] == pytest.approx(0.5 * play_rad, abs=math.radians(0.02))
+
+
+def test_backlash_cannot_be_negative():
+    with pytest.raises(ValueError, match="backlash_rad"):
+        SimConfig(backlash_rad=-0.1)

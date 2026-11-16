@@ -174,3 +174,48 @@ def test_simulate_checks_its_inputs():
         simulate(DEFAULT_PARAMS, LOAD, [0.2, 0.1], [0.0, 0.0], [0.0], initial_position_rad=0.0)
     with pytest.raises(ValueError):
         simulate(DEFAULT_PARAMS, LOAD, [0.1], [], [0.0], initial_position_rad=0.0)
+
+
+# == Added in plan step 8: the integrator is second order ========================
+
+
+LIGHTLY_DAMPED = params(
+    kp_n_m_rad=1.8,
+    kd_n_m_s_rad=0.02,
+    inertia_kg_m2=0.002,
+    viscous_n_m_s_rad=0.0,
+    coulomb_n_m=0.0,
+    delay_s=0.0,
+    torque_max_n_m=100.0,
+)
+
+
+def test_a_lightly_damped_step_overshoots_as_the_closed_form_says():
+    # Friction and load removed: J x'' + kd x' + kp x = kp r, damping ratio 1/6,
+    # overshoot exp(-pi zeta / sqrt(1 - zeta^2)) = 58.80 %. Backward Euler at
+    # 0.5 ms, the scheme up to step 7, gave 57.41 %.
+    zeta = 0.02 / (2 * math.sqrt(1.8 * 0.002))
+    closed_form = 100 * math.exp(-math.pi * zeta / math.sqrt(1 - zeta * zeta))
+    times = np.arange(0.0, 1.0, 0.00001)
+    response = simulate(
+        LIGHTLY_DAMPED, PendulumLoad(), [0.0], [0.2], times,
+        initial_position_rad=0.0, initial_setpoint_rad=0.0,
+    )  # fmt: skip
+    overshoot = 100 * (response.position_rad.max() / 0.2 - 1)
+    assert overshoot == pytest.approx(closed_form, abs=0.05)
+
+
+def test_halving_the_time_step_quarters_the_error():
+    times = np.arange(0.0, 0.5, 0.002)
+
+    def response(dt_s):
+        return simulate(
+            LIGHTLY_DAMPED, LOAD, [0.01], [0.2], times,
+            initial_position_rad=0.0, initial_setpoint_rad=0.0, dt_s=dt_s,
+        ).position_rad  # fmt: skip
+
+    reference = response(0.0005 / 32)
+    coarse = np.max(np.abs(response(0.001) - reference))
+    fine = np.max(np.abs(response(0.0005) - reference))
+    assert coarse / fine > 3.5  # first order would give 2
+    assert fine < math.radians(0.01)

@@ -46,7 +46,11 @@ the command got the actuator back from the runner, in its safe state, from the
 computer's calendar clock: the next invocation reads it to hold the cool-down
 (``latest_enabled_run``). A command that only read from the actuator, and never
 ran an experiment, writes its record with ``write_readonly_run``: no spec,
-outcome, safe state or traces, which ``load_run`` gives back as None.
+outcome, safe state or traces, which ``load_run`` gives back as None. A
+command made of several runs (``characterize``) writes each run's record with
+``write_run`` and then one record of its own with ``write_command_record``:
+no spec or trace of its own, its ``parts`` (the run directories of its runs)
+and the files it wrote into its directory.
 """
 
 from __future__ import annotations
@@ -305,6 +309,89 @@ def write_readonly_run(
         "trace": None,
         "rehearsal": None,
         "files": files,
+        "plot_problem": None,
+    }
+    (path / RUN_FILE).write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def new_run_directory(
+    command: str,
+    adapter: str,
+    device_id: str | None,
+    runs_dir: str | Path = RUNS_DIR,
+) -> Path:
+    """A new, empty run directory, named as ``write_run`` names one.
+
+    For a command that writes files of its own into its record before the
+    record itself (``write_command_record``).
+    """
+    return _run_directory(runs_dir, command, adapter, device_id, utc_now())
+
+
+def write_command_record(
+    path: str | Path,
+    *,
+    command: str,
+    bench: Bench,
+    description: Description | None,
+    verdict: str,
+    summary: str,
+    metrics: Mapping[str, Any] | None = None,
+    files: Mapping[str, str] | None = None,
+    parts: Sequence[str | Path] = (),
+    notes: Sequence[str] = (),
+) -> Path:
+    """Write run.json for a command made of several runs, into ``path``; return ``path``.
+
+    ``characterize`` runs several experiments, each with its own run record
+    (``write_run``), and then fits a model to them. This record holds what
+    belongs to the whole command: its verdict and metrics, the files it wrote
+    into ``path`` (``files``: name in ``path`` -> what it holds), and the run
+    directories of its experiments (``parts``). It has no spec, outcome, safe
+    state or trace of its own: those are in the parts, which ``load_run``
+    reads like any other record.
+    """
+    _check_verdict(verdict)
+    path = Path(path)
+    written_at = utc_now()
+    if description is not None:
+        adapter, device_id = description.identity.adapter, description.identity.device_id
+    else:
+        target = bench.target
+        adapter, device_id = target.adapter, None if target.id is None else str(target.id)
+    info = {
+        "format": FORMAT,
+        "tool_version": __version__,
+        "command": command,
+        "written_utc": written_at.isoformat(),
+        "ended_utc": written_at.isoformat(),
+        "target": _target(adapter, device_id),
+        "verdict": verdict,
+        "outcome": None,
+        "summary": summary,
+        "run_summary": None,
+        "stop": None,
+        "safe_state": None,
+        "metrics": _plain(dict(metrics or {})),
+        "bench": {
+            "source": bench.source,
+            "fingerprint": bench.fingerprint,
+            "limits": _plain(bench.limits),
+            "runner": _plain(bench.runner),
+        },
+        "description": _plain(description),
+        "spec": None,
+        "rehearsal_params": None,
+        "preflight": None,
+        "faults_before": None,
+        "faults_after": None,
+        "cooled_s": 0.0,
+        "notes": list(notes),
+        "trace": None,
+        "rehearsal": None,
+        "parts": [str(part) for part in parts],
+        "files": dict(files or {}),
         "plot_problem": None,
     }
     (path / RUN_FILE).write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")

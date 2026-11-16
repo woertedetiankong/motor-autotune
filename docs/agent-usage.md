@@ -25,11 +25,12 @@ Any other adapter is real hardware. A motor has no undo, and the human's hand on
 |---|---|---|
 | `servobench check --json` | First, before any other experiment; after any change to wiring, mounting, configuration or firmware; whenever something behaves unexpectedly | Reads it, then moves it a few degrees up and back from where it rests (`[check] move` in bench.toml), through the runner |
 | `servobench check --no-motion --json` | On real hardware before the human has agreed to motion; on an assembled robot; whenever you only need to know it is alive | Only reads. Changes nothing, not even torque |
+| `servobench characterize --json` | When the human wants to know how the actuator actually behaves, or wants its parameters for a simulator. Only after `check` passes, and on real hardware only with the human's go-ahead | Runs `check` with motion, then four experiments through the runner: steps of up to about 12 deg, a small stepped sine, one slow 40 deg swing, and more steps (sizes from bench.toml's limits). On real hardware this takes several minutes, mostly the cool-down between experiments |
 | `servobench runs --json` | To see recent runs, newest first | Nothing; it reads the run records |
 | `servobench runs show [RUN] --json` | To read one run's full result again (default: the newest). Its own verdict only says whether the record could be read; the run's verdict is `metrics.run.verdict` | Nothing |
 | `servobench init` | Only to create a bench file where none exists, in a scratch directory or when the human asks | Nothing. The template's limits are placeholders that suit only the simulated servo |
 
-`characterize` and `tune` do not exist yet.
+`tune` does not exist yet.
 
 Every `check` writes a run record: a directory under `runs/` named by time, command and target, holding `run.json` (everything about the run, including the per-item results under `metrics`) and, when the actuator moved, the samples as CSV and a plot. The output's `run_dir` and `files` point to it.
 
@@ -89,12 +90,35 @@ Always pass `--json`. The tool then prints exactly one JSON object on standard o
 
 The actuator is moved only if `responds`, `identity`, `faults`, `voltage`, `temperature` and `bus` all passed. Otherwise the moving items are `skipped`, and their `detail` says why.
 
+### `characterize`
+
+`characterize` measures the parameters of the tool's servo model: the controller's gains, the servo's own inertia, friction, the torque limit and the command delay. It needs a `[load]` in bench.toml, because the load's known gravity torque is what separates the servo's inertia from its gains, and it refuses without one (exit 2, nothing contacted).
+
+It first runs `check` in full on the same actuator. If `check` does not pass, nothing is characterized: the result carries `check`'s verdict, exit code, `needs_human` and `next`, and a `partial` check becomes `refused` (exit 3). A reversed or wrongly zeroed servo produces data that looks ordinary and fits to confident nonsense, so do not look for a way around this. If any experiment is refused, aborted, fails or leaves the safe state unconfirmed, the sequence stops there, nothing is fitted, and the verdict and exit code follow the same rules as for `check`.
+
+What to read in `metrics`:
+
+- `parameters`: one entry per model parameter, plus `damping_total_n_m_s_rad` (kd + viscous). Each has a `status`, `identifiable` or `not_identifiable`, and a `reason`. An identifiable one has a `value` and an `uncertainty` (one standard uncertainty, same unit). A not-identifiable one has `value: null`: the experiments did not determine it, and you must not report a number for it or fill one in from anywhere else. Some say what is known instead: `lower_bound` (the torque limit is at least this) or `determined_only_as` (kd and viscous friction separately are not known, only their sum is). Under limits like the template's the servo never reaches its torque limit, so `torque_max_n_m`, `kd_n_m_s_rad` and `viscous_n_m_s_rad` are always not identifiable there. That is a correct result, and it is why the verdict is `partial`.
+- `validation`: the fitted model and the default placeholder model, each replayed on an experiment that was not used in the fit (`holdout`), with their RMS error in radians, and `noise_floor_rad`, the error a model that described the actuator exactly would still have against these readings. `fit_quality` is `good` when the fitted model's error is at most 1.5 times the noise floor, `poor` otherwise. `default_error_to_fitted_error` says how much better the fit predicts than the defaults; on the simulated servo with its default settings it is about 1, because the simulated servo is the default model.
+- `fit`: the starting points and whether they agree, the largest torque the fitted model needed, and whether the servo saturated.
+- `files`: `servo_model.json` (the parameters with their uncertainties, identifiability and the conditions of the measurement), `servo_model_mujoco.xml` (a MuJoCo fragment, written only for a good fit), `holdout_overlay.png` (measured, default and fitted response on the held-out experiment, each model's error on the plot), and every experiment's own run record.
+
+| verdict | meaning |
+|---|---|
+| `pass` | Every parameter was identified and the fit is good. |
+| `partial` (exit 0) | The fit is good, but some parameters are not identifiable. Report the identifiable ones with their uncertainties and the others as not identifiable with their reasons. |
+| `fail` (exit 1, `needs_human`) | The fitted model does not describe this actuator: on the held-out experiment its error is more than 1.5 times the noise floor. The parameters are still reported, with `metrics.parameters_usable: false` and every reason starting `POOR FIT:`, because they are numbers of a model that is wrong for this actuator: they can look precise and still be far off. They must not be loaded into a simulator or quoted as measurements, and no MuJoCo fragment is written. Show the human the summary and the overlay plot. |
+
+**A poor fit or a parameter that is not identifiable is a finding to report, not a problem to fix by retrying.** Do not rerun `characterize` hoping for a better fit, do not design other experiments to make a parameter look determined, and do not change bench.toml to allow bigger moves. The data says what it says: on the simulated servo, repeated runs agree within the stated uncertainty, and a retry that happened to look better would be chance, not a better measurement. Which effect the model lacks (backlash, voltage or temperature dependence, ...) and whether to measure more is the human's decision.
+
+Two limits of the result, which you should mention when you report one: the parameters are of this model, measured with this load, supply voltage and temperature (all in `servo_model.json`'s `conditions`), and MuJoCo's integrator and dry friction differ from the model's, so the same parameters behave slightly differently there.
+
 ## Exit codes and what to do next
 
 | exit | meaning | what to do |
 |---|---|---|
-| 0 | `pass` or `partial`: nothing wrong was found | For `pass`, carry on. For `partial`, look at what was skipped or unknown before relying on it. After `--no-motion` on real hardware, ask the human before running `check` with motion. |
-| 1 | `fail`: the setup has a problem, named in `metrics.by_status.fail` | Tell the human which item failed, quoting `summary` and `next`. Do not run other experiments on this actuator until it is fixed. These problems are physical (wiring, mounting, direction or zero settings stored in the device) and you cannot fix them from software: a device setting is a persistent write, which only the owner makes. The one exception is a `temperature` failure with `needs_human: false`: the actuator is warm, so wait for it to cool and run `check` again. |
+| 0 | `pass` or `partial`: nothing wrong was found | For `pass`, carry on. For `partial`, look at what was skipped, unknown or not identifiable before relying on it. After `--no-motion` on real hardware, ask the human before running `check` with motion. |
+| 1 | `fail`: the setup has a problem, named in `metrics.by_status.fail`; for `characterize`, also a model that does not describe the actuator | Tell the human which item failed, quoting `summary` and `next`. Do not run other experiments on this actuator until it is fixed. These problems are physical (wiring, mounting, direction or zero settings stored in the device) and you cannot fix them from software: a device setting is a persistent write, which only the owner makes. The one exception is a `temperature` failure with `needs_human: false`: the actuator is warm, so wait for it to cool and run `check` again. |
 | 2 | Usage or bench-file error, or an experiment the bench limits do not allow. Nothing was contacted | If the problem is your command line (`needs_human: false`), correct it. If it is the bench file, or the limits refused the experiment (`needs_human: true`), tell the human each problem in `metrics.problems` or `summary`. Do not edit `bench.toml`. |
 | 3 | The safety layer stopped or refused motion: a safety abort, a reading outside the limits before starting, a failed rehearsal, the cool-down, or Ctrl-C | Stop and tell the human what was stopped and why. Do not rerun the same experiment, and do not try a smaller or different one to get past it. The exception is `metrics.run.stop_kind` `cooldown` (`needs_human: false`): the bench file asks for a rest between experiments, and `next` says how long. Wait that long, then run the command again. |
 | 4 | The device or the link to it: it reports a fault, it does not answer, the adapter or the tool failed, or the safe state was not confirmed | Stop and tell the human. The tool cannot clear a device fault and must not try: recovery from a fault is a human decision, often a power cycle once they know the cause. If `error` is present, the tool itself failed; pass the traceback on. |

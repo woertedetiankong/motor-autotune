@@ -172,3 +172,28 @@ def test_runs_lists_and_shows_the_records(tmp_path, monkeypatch, capsys):
 
     assert main(["runs"]) == 0
     assert "partial" in capsys.readouterr().out
+
+
+# == Added in plan step 8 =========================================================
+
+
+def test_characterize_with_a_missing_limit_is_a_bench_file_error(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "bench.toml").write_text(
+        TEMPLATE.replace('speed_max = "180 deg/s"\n', ""), encoding="utf-8"
+    )
+    assert main(["characterize", "--json"]) == 2
+    output = json_of(capsys)
+    assert output["command"] == "characterize" and output["verdict"] == "error"
+    assert "speed_max" in output["summary"]
+    assert not (tmp_path / "runs").exists()
+
+
+def test_characterize_without_a_load_is_refused_before_contact(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    text = TEMPLATE.split("[load]")[0] + "[sim]\n"
+    (tmp_path / "bench.toml").write_text(text, encoding="utf-8")
+    assert main(["characterize", "--json"]) == 2
+    output = json_of(capsys)
+    assert output["verdict"] == "refused" and "[load]" in output["summary"]
+    assert not (tmp_path / "runs").exists()

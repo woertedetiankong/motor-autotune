@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from typing import NoReturn
 
@@ -28,6 +29,7 @@ from servobench.commands import (
     unexpected_error,
 )
 from servobench.commands import runs as runs_command
+from servobench.commands.characterize import run_characterize
 from servobench.commands.check import run_check
 from servobench.limits import (
     BENCH_FILENAME,
@@ -92,6 +94,25 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"the bench file (default: {BENCH_FILENAME} in this directory)",
     )
     check.set_defaults(handler=_check)
+
+    characterize = commands.add_parser(
+        "characterize",
+        help="how does this actuator actually behave? fit the servo model and export it",
+        description="Run check, then a set of steps and a stepped sine on the actuator that the"
+        " bench file describes, each through the safety layer, and fit the servo model's"
+        " parameters to them. Each parameter is reported with its uncertainty, or as not"
+        " identifiable with the reason; the fitted model is compared with the default on a"
+        " held-out experiment against the readings' noise floor; the result is exported as JSON"
+        " and as a MuJoCo fragment. Every experiment writes a run record under runs/.",
+    )
+    _json_option(characterize)
+    characterize.add_argument(
+        "--bench",
+        default=BENCH_FILENAME,
+        metavar="PATH",
+        help=f"the bench file (default: {BENCH_FILENAME} in this directory)",
+    )
+    characterize.set_defaults(handler=_characterize)
 
     runs = commands.add_parser(
         "runs",
@@ -210,16 +231,31 @@ def _check(args: argparse.Namespace) -> CommandResult:
     try:
         return run_check(bench, motion=not args.no_motion)
     except UnknownAdapter as error:
-        return CommandResult(
-            command="check",
-            verdict=ERROR,
-            summary=f"Error: {bench.source}: {error}.",
-            exit_code=ExitCode.USAGE,
-            needs_human=True,
-            next=f"Nothing was contacted. Tell the owner: {bench.source} names an adapter that"
-            " this version of servobench does not have. The bench file is theirs to change.",
-            metrics={"problems": [f"{bench.source}: {error}"]},
-        )
+        return _unknown_adapter("check", bench, error)
+
+
+def _unknown_adapter(command: str, bench, error: UnknownAdapter) -> CommandResult:
+    return CommandResult(
+        command=command,
+        verdict=ERROR,
+        summary=f"Error: {bench.source}: {error}.",
+        exit_code=ExitCode.USAGE,
+        needs_human=True,
+        next=f"Nothing was contacted. Tell the owner: {bench.source} names an adapter that"
+        " this version of servobench does not have. The bench file is theirs to change.",
+        metrics={"problems": [f"{bench.source}: {error}"]},
+    )
+
+
+def _characterize(args: argparse.Namespace) -> CommandResult:
+    try:
+        bench = load_bench(args.bench)
+    except BenchFileError as error:
+        return _bench_error("characterize", error)
+    try:
+        return run_characterize(bench)
+    except UnknownAdapter as error:
+        return _unknown_adapter("characterize", bench, error)
 
 
 def _runs_list(args: argparse.Namespace) -> CommandResult:
@@ -298,6 +334,8 @@ def _text(result: CommandResult) -> str:
         width = max(len(name) for name in items)
         for name, item in items.items():
             lines.append(f"  {item['status']:<8} {name:<{width}}  {item['detail']}")
+    if result.command == "characterize" and "parameters" in result.metrics:
+        lines += ["", *_parameters_text(result.metrics)]
     if result.next:
         lines += ["", f"next: {result.next}"]
     if result.command == "check" and "limits" in result.metrics:
@@ -334,6 +372,28 @@ def _limits_text(metrics: dict) -> list[str]:
             unit = _DISPLAY_UNITS.get(dimension)
             shown.append(f"{key} {format_quantity(values[attribute], dimension, unit, digits=4)}")
         lines.append(f"  [{section}] " + ", ".join(shown))
+    return lines
+
+
+def _parameters_text(metrics: dict) -> list[str]:
+    lines = []
+    for name, entry in metrics["parameters"].items():
+        if entry["status"] == "identifiable":
+            shown = f"{entry['value']:.4g} +/- {entry['uncertainty']:.2g} {entry['unit']}"
+        elif entry.get("lower_bound") is not None:
+            shown = f"not identifiable; at least {entry['lower_bound']:.3g} {entry['unit']}"
+        elif entry.get("determined_only_as"):
+            shown = f"not identifiable; only {entry['determined_only_as']} is determined"
+        else:
+            shown = "not identifiable"
+        lines.append(f"  {name:<26} {shown}")
+    validation = metrics["validation"]
+    deg = math.degrees(1.0)
+    lines.append(
+        f"  held-out RMS error: fitted {validation['fitted_model']['rms_error_rad'] * deg:.4f}"
+        f" deg, default {validation['default_model']['rms_error_rad'] * deg:.4f} deg, noise"
+        f" floor {validation['noise_floor_rad'] * deg:.4f} deg: fit {validation['fit_quality']}"
+    )
     return lines
 
 

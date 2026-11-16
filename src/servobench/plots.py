@@ -123,6 +123,83 @@ def plot_run(
     return path
 
 
+def plot_overlay(
+    path: str | Path,
+    *,
+    title: str,
+    times_s,
+    measured_rad,
+    default_rad,
+    fitted_rad,
+    command_times_s,
+    command_rad,
+    default_error_rad: float,
+    fitted_error_rad: float,
+    noise_floor_rad: float,
+    fit_quality: str,
+) -> Path:
+    """The held-out experiment: measured position, the default model and the fitted model.
+
+    Above, the three positions and the command against time; below, each
+    model's error (model minus measured) with the readings' noise floor as a
+    band. Each model's RMS error is in its legend label and in the title
+    block, in degrees.
+    """
+    path = Path(path)
+    figure = Figure(figsize=(10.0, 7.0), dpi=120, facecolor=SURFACE, layout="constrained")
+    FigureCanvasAgg(figure)
+    top, bottom = figure.subplots(2, 1, sharex=True, gridspec_kw={"height_ratios": (3, 1.6)})
+    for axes in (top, bottom):
+        _style(axes)
+    origin = command_times_s[0] if len(command_times_s) else times_s[0]
+    t = [value - origin for value in times_s]
+    deg = math.degrees
+    if len(command_times_s):
+        ct = [value - origin for value in command_times_s] + [t[-1]]
+        cd = [deg(value) for value in command_rad] + [deg(command_rad[-1])]
+        top.step(ct, cd, where="post", color=MUTED, linewidth=1.0, label="commanded", zorder=1)
+    top.plot(t, [deg(v) for v in measured_rad], color=INK, linewidth=1.6, label="measured",
+             zorder=2)  # fmt: skip
+    top.plot(
+        t, [deg(v) for v in default_rad], color=MEASURED, linewidth=1.2, linestyle=(0, (4, 2)),
+        label=f"default model: RMS error {deg(default_error_rad):.3f} deg", zorder=3,
+    )  # fmt: skip
+    top.plot(
+        t, [deg(v) for v in fitted_rad], color=COMMANDED, linewidth=1.2,
+        label=f"fitted model: RMS error {deg(fitted_error_rad):.3f} deg", zorder=4,
+    )  # fmt: skip
+    top.set_ylabel("position (deg)", color=SECONDARY_INK)
+    legend = top.legend(loc="upper right", frameon=False, fontsize=9)
+    for text in legend.get_texts():
+        text.set_color(SECONDARY_INK)
+
+    floor = deg(noise_floor_rad)
+    bottom.axhspan(-floor, floor, color=GRID, zorder=0)
+    bottom.plot(t, [deg(m - x) for m, x in zip(default_rad, measured_rad, strict=True)],
+                color=MEASURED, linewidth=1.0, label="default model - measured")  # fmt: skip
+    bottom.plot(t, [deg(f - x) for f, x in zip(fitted_rad, measured_rad, strict=True)],
+                color=COMMANDED, linewidth=1.0, label="fitted model - measured")  # fmt: skip
+    bottom.annotate(
+        f"shaded: noise floor of the readings, +/- {floor:.3f} deg",
+        xy=(0.0, 1.0), xycoords="axes fraction", xytext=(4, -4), textcoords="offset points",
+        ha="left", va="top", fontsize=8, color=SECONDARY_INK,
+    )  # fmt: skip
+    bottom.set_ylabel("error (deg)", color=SECONDARY_INK)
+    bottom.set_xlabel("time since the first command (s)", color=SECONDARY_INK)
+    legend = bottom.legend(loc="lower right", frameon=False, fontsize=8)
+    for text in legend.get_texts():
+        text.set_color(SECONDARY_INK)
+
+    verdict = (
+        f"fitted model {deg(fitted_error_rad):.3f} deg RMS, default {deg(default_error_rad):.3f}"
+        f" deg, noise floor {floor:.3f} deg: fit {fit_quality}"
+    )
+    figure.suptitle(f"{title}\n{verdict}", color=INK if fit_quality == "good" else CRITICAL,
+                    fontsize=11, x=0.01, ha="left")  # fmt: skip
+    figure.savefig(path, format="png", facecolor=SURFACE)
+    return path
+
+
 def _style(axes) -> None:
     axes.set_facecolor(SURFACE)
     axes.grid(True, color=GRID, linewidth=0.6)

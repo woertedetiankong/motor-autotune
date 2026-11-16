@@ -26,25 +26,35 @@ Integration. A fixed grid of ``dt_s``, default 0.5 ms (2 kHz): ten times the
 simulated servo's default bus rate, eight steps inside the default command
 delay, and about 1/470 of the natural period of the default servo with the
 template's 50 g, 100 mm arm (natural frequency about 27 rad/s). Each step is
-semi-implicit Euler. The controller and friction terms are implicit: the new
-velocity is solved for with the derivative gain, viscous and Coulomb friction
-taken at the new velocity and the proportional term at the new position
-(backward Euler for the linear part), and the position is then advanced with
-the new velocity. Gravity is taken at the start of the
-step, which makes the free pendulum symplectic Euler (no energy drift). The
-implicit equation is piecewise linear and strictly monotonic in the new
-velocity because of the torque limit, so it is solved exactly in closed form,
-with no iteration. The controller part is therefore stable for any gains,
-inertia and time step, so the fit can try any parameters without the
-integration blowing up; the explicit gravity term only needs dt_s below about
-2 / sqrt(g / com_distance_m), which is 0.2 s for a 100 mm arm. Coulomb friction
-is treated as a set-valued force, which gives true sticking at rest instead of
-the chatter an explicit sign(v) produces. The command delay is not rounded to
-the grid: a step during which the delayed command changes uses the
-time-average of the command over the step, so the response varies smoothly
-with the delay and with command times. Values between grid points are
-interpolated linearly. The scheme is first-order accurate: halving dt_s changes
-a 10 deg step response by less than 0.05 deg.
+the trapezoidal rule (Crank-Nicolson) for the linear part, solved implicitly:
+with v the new velocity and w = (v_old + v) / 2 the step's mean velocity, the
+controller acts on the mid position theta + dt * w / 2 and on w, viscous
+friction on w, and the position advances by dt * w. Coulomb friction is taken
+at the new velocity (implicit, so the shaft can stop exactly), and gravity at
+the predicted mid position theta + dt * v_old / 2 (explicit). The implicit
+equation is piecewise linear and strictly monotonic in v because of the torque
+limit, so it is solved exactly in closed form, with no iteration. The scheme
+is second-order accurate and, unlike backward Euler, adds no numerical damping
+to an oscillation: up to step 7 the model used backward Euler, which at 0.5 ms
+damped the default servo's step by an extra kp * dt (about 1 % of its damping)
+and delayed it by about dt / 2, so a fit through it read the damping 1 to 4 %
+low and the delay 6 % high against a continuous-time servo (plan step 8). Now
+the overshoot of a lightly damped step matches the closed form to 0.01
+percentage point, and a fit against a 64-times finer reference was within
+0.03 % on every parameter of the default servo and 0.11 % (the delay) of a
+lightly damped one. The controller part is stable for any gains,
+inertia and time step (A-stable), so the fit can try any parameters without
+the integration blowing up; but for very stiff parameters (kd / J or
+sqrt(kp / J) far above 1 / dt) the trapezoidal rule does not damp the fast
+mode, and the velocity rings from step to step while the position stays
+bounded. The explicit gravity term only needs dt_s below about
+2 / sqrt(g / com_distance_m), 0.2 s for a 100 mm arm, and conserves the free
+pendulum's energy. Coulomb friction is treated as a set-valued force, which
+gives true sticking at rest instead of the chatter an explicit sign(v)
+produces. The command delay is not rounded to the grid: a step during which the
+delayed command changes uses the time-average of the command over the step,
+so the response varies smoothly with the delay and with command times. Values
+between grid points are interpolated linearly.
 
 ``Integrator`` is the one stepping engine. The simulated servo uses it live,
 feeding commands as they arrive; ``simulate`` replays a recorded command
@@ -174,13 +184,23 @@ class ServoModel:
         returned torque is the motor torque applied during the step.
         """
         p = self.params
+        v0 = velocity_rad_s
+        # Trapezoidal rule: with v the new velocity, the step's mean velocity is
+        # w = (v0 + v) / 2 and its mid position theta + dt * w / 2. Viscous
+        # friction and the controller act at those; gravity at the predicted
+        # mid position. Substituting w leaves an equation in v of the same form
+        # as before, solved below: a*v - b - clamp(prop - damp*v) + c*sign(v) = 0.
+        half_viscous = 0.5 * p.viscous_n_m_s_rad
         inertia_s = self.inertia_kg_m2 / dt_s
-        a = inertia_s + p.viscous_n_m_s_rad
-        b = inertia_s * velocity_rad_s - self._gravity_n_m * math.sin(position_rad)
+        a = inertia_s + half_viscous
+        gravity = self._gravity_n_m * math.sin(position_rad + 0.5 * dt_s * v0)
+        b = (inertia_s - half_viscous) * v0 - gravity
         if torque_on:
-            # tau_m(v) = clamp(prop - damp * v): kp * (r - theta_new) - kd * v_new.
-            prop = p.kp_n_m_rad * (setpoint_rad - position_rad)
-            damp = p.kd_n_m_s_rad + p.kp_n_m_rad * dt_s
+            # tau_m = clamp(kp * (r - theta - dt * w / 2) - kd * w)
+            #       = clamp(prop - damp * v), with w = (v0 + v) / 2.
+            damping = p.kd_n_m_s_rad + 0.5 * p.kp_n_m_rad * dt_s
+            prop = p.kp_n_m_rad * (setpoint_rad - position_rad) - 0.5 * damping * v0
+            damp = 0.5 * damping
             limit = p.torque_max_n_m
         else:
             prop = damp = limit = 0.0
@@ -200,7 +220,7 @@ class ServoModel:
             elif unclamped < -limit:
                 new_velocity = (push - limit) / a
         torque = _clamp(prop - damp * new_velocity, limit)
-        return position_rad + dt_s * new_velocity, new_velocity, torque
+        return position_rad + 0.5 * dt_s * (v0 + new_velocity), new_velocity, torque
 
 
 def _clamp(value: float, limit: float) -> float:

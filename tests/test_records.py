@@ -321,3 +321,31 @@ def test_the_latest_enabled_run_of_one_actuator_is_found(completed, tmp_path, mo
     assert records.latest_enabled_run("sim", "2", tmp_path) is None  # another actuator
     assert records.latest_enabled_run("hd1910", "1", tmp_path) is None
     assert records.latest_enabled_run("sim", "1", tmp_path / "none") is None
+
+
+# == Added in plan step 8 =========================================================
+
+
+def test_a_command_record_holds_its_own_files_and_its_parts(completed, tmp_path):
+    part = write_run(completed, command="characterize", runs_dir=tmp_path)
+    path = records.new_run_directory("characterize", "sim", "1", tmp_path)
+    (path / "servo_model.json").write_text("{}\n", encoding="utf-8")
+    records.write_command_record(
+        path,
+        command="characterize",
+        bench=BENCH,
+        description=completed.description,
+        verdict="partial",
+        summary="Partial: a test.",
+        metrics={"parameters": {"kp_n_m_rad": {"value": 1.8}}},
+        files={"servo_model.json": "the export"},
+        parts=[part],
+    )
+    record = load_run(path)
+    assert record.verdict == "partial" and record.spec is None and record.trace is None
+    assert record.info["parts"] == [str(part)]
+    assert record.info["files"] == {"servo_model.json": "the export"}
+    runs, problems = records.list_runs(tmp_path)
+    assert problems == [] and {run.path for run in runs} == {part, path}
+    # The cool-down reads the enabled part, not the command record.
+    assert records.latest_enabled_run("sim", "1", tmp_path).path == part

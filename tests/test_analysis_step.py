@@ -145,7 +145,7 @@ def test_a_settling_time_the_reading_resolution_cannot_fix_is_refused_not_report
     assert back.settling_time_s is None
     assert "edge of the settling band" in back.reasons["settling_time_s"]
     assert analyse_step(true_trace(trace), spec).steps[1].settling_time_s == pytest.approx(
-        0.199, abs=0.001
+        0.201, abs=0.001
     )
 
 
@@ -200,13 +200,24 @@ def test_a_step_whose_band_is_inside_the_reading_uncertainty_gets_no_settling_ti
 
 def test_with_noise_a_small_step_gets_no_settling_time():
     # 5 deg is 57 reading steps; the 2 % band is 1.1 of them, against readings
-    # that scatter by about one. Every seed refuses, for one of two reasons.
+    # that scatter by about one. Most seeds refuse, for one of two reasons.
+    # Amended in step 8: with the second-order integrator the model's 5 deg
+    # step overshoots by 0.12 % instead of creeping up to the band, and 8 of 40
+    # seeds (0, 13, 19, 25, 31, 35, 38, 39) report a settling time; every one
+    # was within its reported uncertainty of the true value. A seed that
+    # reports must therefore be right; it may not report a weak number.
     spec = Step(0.0, (5 * DEG,), dwell_s=1.0, settle_s=0.5)
     reasons = []
-    for seed in range(5):
-        step = analyse_step(completed(spec, seed=seed), spec).steps[0]
-        assert step.settling_time_s is None
+    for seed in range(10):
+        trace = completed(spec, seed=seed)
+        step = analyse_step(trace, spec).steps[0]
+        if step.settling_time_s is not None:
+            true = analyse_step(true_trace(trace), spec).steps[0].settling_time_s
+            assert abs(step.settling_time_s - true) <= step.uncertainties["settling_time_s"]
+            assert step.uncertainties["settling_time_s"] <= 0.25 * step.settling_time_s
+            continue
         reasons.append(step.reasons["settling_time_s"])
+    assert len(reasons) >= 8
     assert any("not steadily inside" in reason for reason in reasons)
     assert all("not steadily inside" in r or "edge of the settling band" in r for r in reasons)
 

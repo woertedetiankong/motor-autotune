@@ -103,6 +103,13 @@ class SimConfig:
     initial_temperature_degc: float | None = None  # None: ambient
     initial_position_rad: float = 0.0  # where the arm starts; 0 is hanging straight down
     position_steps_per_turn: int | None = 4096  # reading resolution; None: not quantised
+    # Backlash, an effect the servo model does not have, for testing the model
+    # fit (plan step 8): play of this total width between the motor side, which
+    # the internal controller moves and holds, and the output, which the
+    # position reading measures. The output stays put until the motor side has
+    # taken up the play, then follows it. Not settable from the bench file;
+    # 0 (the default) leaves the simulator exactly as without it.
+    backlash_rad: float = 0.0
 
     # Measurement noise, one standard deviation, when noise is on. PLACEHOLDERS.
     position_noise_rad: float = 0.3 * TURN_RAD / 4096
@@ -147,6 +154,8 @@ class SimConfig:
             raise ValueError("position_steps_per_turn must be at least 1")
         if not 0 <= self.dropped_reply_probability < 1:
             raise ValueError("dropped_reply_probability must be in [0, 1)")
+        if not (math.isfinite(self.backlash_rad) and self.backlash_rad >= 0):
+            raise ValueError("backlash_rad must be zero or more")
 
     @classmethod
     def from_bench(cls, settings: SimSettings) -> SimConfig:
@@ -189,6 +198,8 @@ class SimServo(Adapter):
         self._direction = -1.0 if REVERSED_DIRECTION in faults else 1.0
         self._zero_offset_rad = config.wrong_zero_offset_rad if WRONG_ZERO in faults else 0.0
         self._period_s = 1.0 / config.sample_rate_hz
+        self._half_play_rad = 0.5 * config.backlash_rad
+        self._output_rad = config.initial_position_rad  # the output side of any backlash
 
         seed = config.seed
         self._timing = random.Random(f"{seed}:timing")
@@ -362,6 +373,8 @@ class SimServo(Adapter):
     ) -> None:
         """The device's own temperature model and cutoff, run for every committed model step."""
         config = self.config
+        if self._half_play_rad:
+            self._output_rad = self._play(self._integrator.position_rad)
         rise_k = config.heating_k_per_n_m_squared * torque_n_m * torque_n_m
         if torque_on and OVERHEATING in config.faults:
             rise_k += config.overheating_rise_k
@@ -385,6 +398,8 @@ class SimServo(Adapter):
         if name == POSITION:
             if STUCK_POSITION in config.faults:
                 return self._stuck_reading_rad
+            if self._half_play_rad:
+                position_rad = self._play(position_rad)
             return self._quantise(
                 position_rad + self._zero_offset_rad + self._gauss(config.position_noise_rad)
             )
@@ -399,6 +414,11 @@ class SimServo(Adapter):
         if name == TEMPERATURE:
             return self._temperature_degc + self._gauss(config.temperature_noise_degc)
         raise AssertionError(f"undeclared signal {name!r}")  # check_signal_names prevents this
+
+    def _play(self, motor_rad: float) -> float:
+        """Where the output is, behind the backlash, with the motor side at ``motor_rad``."""
+        half = self._half_play_rad
+        return min(max(self._output_rad, motor_rad - half), motor_rad + half)
 
     def _gauss(self, sigma: float) -> float:
         return self._noise.gauss(0.0, sigma) if self.config.noise and sigma > 0 else 0.0

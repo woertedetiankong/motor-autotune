@@ -28,7 +28,7 @@ Steps 1 to 8 need no hardware. Step 9 needs a document from the owner. Steps 10 
 - [x] 5. Run records and plots
 - [x] 6. Analysis: step response and frequency response
 - [x] 7. Command line and `check`, on the simulated servo
-- [ ] 8. Model fit, `characterize` and simulator export, on the simulated servo
+- [x] 8. Model fit, `characterize` and simulator export, on the simulated servo
 - [ ] 9. Feetech protocol layer (needs the register table)
 - [ ] 10. HD1910 adapter, read-only, on the bench (needs hardware and the owner)
 - [ ] 11. First motion and conformance on the bench
@@ -426,6 +426,13 @@ Design choices in the servo stage that this depends on: the narrow adapter contr
 ## Notes for the next session
 
 Add dated, one-line notes here when a step leaves something the next session must know.
+
+- 2026-11-16: For step 12: `characterize` swings the arm slowly to +/-40 deg (the gravity sweep; half the command range on the narrower side of zero, at most 40 deg) as well as stepping about 12 deg; agree that travel with the owner before the first run. On hardware it takes about 5 min, mostly four 60 s cool-downs.
+- 2026-11-16: For step 12: the experiment set is sized by the default placeholder model with a 20 % speed margin; a real servo more than about 25 % faster will be aborted on `speed_max` in the first experiment. That is a finding for the owner, not a reason to resize silently.
+- 2026-11-16: For step 12: `GOOD_FIT_NOISE_RATIO` (1.5) and the noise floor were calibrated on the simulated servo only (a correct model scores 0.89 to 1.12; 0.5 deg of backlash 1.64 to 1.70; 0.3 deg is not caught). Revisit both with the owner once real data shows its own noise and timing.
+- 2026-11-16: For step 13: under the template's limits only kd + viscous is measured, never the split, and the torque limit only as a lower bound; proposing a new kd needs a decision on that split (or an experiment that saturates, which the template's speed limit forbids).
+- 2026-11-16: The MuJoCo fragment was checked by loading it in MuJoCo 4.0.1 (installed in a throwaway environment, not a dependency): every attribute lands where intended, and a 10 deg step differs from `servobench.model` by at most 0.074 deg at a 2 ms timestep. Nothing in the test suite runs MuJoCo.
+- 2026-11-16: Backlash in the simulator (`SimConfig.backlash_rad`) and hidden servo parameters are set only from Python, not from bench.toml, so `characterize` on the command-line simulator always measures the default model (fitted and default errors equal).
 
 - 2026-11-16: For steps 10 and 11: `check`'s zero item assumes the actuator is at rest with torque off when check starts (a servo holding torque reads where it holds, not where the arm hangs); find out the HD1910's torque state at power-up, and whether its gearbox lets the 50 g arm fall to hanging at all, before trusting that item.
 - 2026-11-16: For step 10: `check`'s bus item (200 back-to-back reads, 99 % answered, `[check] sample_rate_min` 100 Hz) and `temperature_rise_max` 3 degC were chosen against the simulated servo; revisit both with the owner once the real servo's rate, jitter and temperature step are measured. The cool-down across invocations finds the previous run by adapter name and device id, so the real adapter must report a stable `device_id`.
