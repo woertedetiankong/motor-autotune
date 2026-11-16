@@ -540,3 +540,30 @@ def test_an_experiment_record_that_cannot_be_written_stops_characterize(tmp_path
     assert "could not be written" in result.summary
     assert list(result.metrics["experiments"]) == ["steps"]  # nothing more was run
     assert "parameters" not in result.metrics
+
+
+# == Regressions from the second outside review, 2026-11-16 ===========================
+
+
+def test_characterize_refuses_inside_the_cool_down_of_an_unreadable_record(tmp_path):
+    from servobench.commands.check import run_check
+
+    refuse = bench(when_too_warm='"refuse"')
+    first = run_check(refuse, runs_dir=tmp_path, adapter=SimServo(load=LOAD))
+    assert first.verdict == "pass", first.summary
+    (Path(first.run_dir) / records.RUN_FILE).write_text("{", encoding="utf-8")
+    result = run_characterize(refuse, runs_dir=tmp_path, adapter=SimServo(load=LOAD))
+    assert result.verdict == "refused" and result.exit_code == 3, result.summary
+    assert first.run_dir in result.summary and "cannot be read" in result.summary
+    assert "move" in result.next
+
+
+def test_characterize_says_why_check_waited_for_an_unreadable_record(tmp_path):
+    from servobench.commands.check import run_check
+
+    first = run_check(BENCH, runs_dir=tmp_path, adapter=SimServo(load=LOAD))
+    (Path(first.run_dir) / records.RUN_FILE).write_text("{", encoding="utf-8")
+    result = run_characterize(BENCH, runs_dir=tmp_path, adapter=SimServo(load=LOAD))
+    assert result.verdict == "partial", result.summary
+    assert first.run_dir in result.summary and "cannot be read" in result.summary
+    assert "move" in result.next and result.needs_human is False

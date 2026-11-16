@@ -349,3 +349,30 @@ def test_a_command_record_holds_its_own_files_and_its_parts(completed, tmp_path)
     assert problems == [] and {run.path for run in runs} == {part, path}
     # The cool-down reads the enabled part, not the command record.
     assert records.latest_enabled_run("sim", "1", tmp_path).path == part
+
+
+# == Regressions from the second outside review, 2026-11-16 ===========================
+
+
+def test_the_cool_down_counts_an_unreadable_record_at_the_time_in_its_name(completed, tmp_path):
+    early = datetime.datetime(2026, 11, 16, 9, 0, tzinfo=datetime.UTC)
+    readable = write_run(completed, command="check", runs_dir=tmp_path, ended_utc=early)
+    spoiled = tmp_path / "20261116T091500Z-check-sim-1"
+    spoiled.mkdir()
+    (spoiled / records.RUN_FILE).write_text("{", encoding="utf-8")
+    (tmp_path / "scratch").mkdir()  # not named like a run directory
+    found = records.records_for_cooldown("sim", "1", tmp_path)
+    assert found.latest.path == readable
+    assert [record.path for record in found.unreadable] == [spoiled]
+    assert found.unreadable[0].named_utc == datetime.datetime(
+        2026, 11, 16, 9, 15, tzinfo=datetime.UTC
+    )
+    assert "not valid JSON" in found.unreadable[0].problem or "cannot be read" in (
+        found.unreadable[0].problem
+    )
+    assert found.not_runs == (tmp_path / "scratch",)
+    # An unreadable record may be any actuator's: it counts for every one.
+    assert [r.path for r in records.records_for_cooldown("hd1910", "3", tmp_path).unreadable] == [
+        spoiled
+    ]
+    assert records.records_for_cooldown("sim", "1", tmp_path / "none").latest is None

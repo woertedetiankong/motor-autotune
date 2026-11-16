@@ -449,20 +449,29 @@ class _RunEnds:
     """
 
     def __init__(self) -> None:
-        self._ends: dict[int, tuple[Callable[[], object], float]] = {}
+        self._ends: dict[int, tuple[Callable[[], object], float, str | None]] = {}
 
     def get(self, adapter: Adapter) -> float | None:
+        entry = self._entry(adapter)
+        return None if entry is None else entry[1]
+
+    def reason(self, adapter: Adapter) -> str | None:
+        """How the end was established, when it was not simply seen (see note_previous_run)."""
+        entry = self._entry(adapter)
+        return None if entry is None else entry[2]
+
+    def _entry(self, adapter: Adapter):
         entry = self._ends.get(id(adapter))
         if entry is None or entry[0]() is not adapter:
             return None
-        return entry[1]
+        return entry
 
-    def set(self, adapter: Adapter, end_s: float) -> None:
+    def set(self, adapter: Adapter, end_s: float, reason: str | None = None) -> None:
         try:
             ref: Callable[[], object] = weakref.ref(adapter)
         except TypeError:  # an object that cannot be weakly referenced: keep it
             ref = lambda kept=adapter: kept  # noqa: E731
-        self._ends[id(adapter)] = (ref, end_s)
+        self._ends[id(adapter)] = (ref, end_s, reason)
 
 
 _last_run_end_s = _RunEnds()
@@ -483,7 +492,7 @@ def stop_time_max_s(description: Description, settings: RunnerSettings) -> float
     return settings.sample_gap_max_s + call_s
 
 
-def note_previous_run(adapter: Adapter, ended_s_ago: float) -> None:
+def note_previous_run(adapter: Adapter, ended_s_ago: float, *, reason: str | None = None) -> None:
     """Tell the runner that a run on this actuator ended ``ended_s_ago`` seconds ago.
 
     For a run made by another process, which this process cannot remember: a
@@ -494,13 +503,18 @@ def note_previous_run(adapter: Adapter, ended_s_ago: float) -> None:
     earlier than one already known is ignored, and a negative or non-finite
     ``ended_s_ago`` (a record from the future, a clock that was changed) counts
     as a run that has only just ended.
+
+    ``reason``, when the end was not read from a sound record (for example it
+    was assumed because a record cannot be read), is one or more sentences
+    saying how it was established and what the owner can do; the runner repeats
+    it when it refuses or waits because of this end.
     """
     if not (isinstance(ended_s_ago, (int, float)) and math.isfinite(ended_s_ago)):
         ended_s_ago = 0.0
     end_s = adapter.clock.now_s() - max(0.0, float(ended_s_ago))
     known_s = _last_run_end_s.get(adapter)
     if known_s is None or end_s > known_s:
-        _last_run_end_s.set(adapter, end_s)
+        _last_run_end_s.set(adapter, end_s, reason)
 
 
 T = TypeVar("T")
@@ -724,12 +738,15 @@ class _Run:
         too_warm = temperature_degc > limits.start_temperature_max_degc
         if rest_left_s <= 0 and not too_warm:
             return False
+        reason = _last_run_end_s.reason(self.adapter) if rest_left_s > 0 else None
         if settings.when_too_warm != WAIT:
             if rest_left_s > 0:
+                records = "" if reason is None else ", as far as the records show"
                 self.refuse(
                     COOLDOWN,
-                    f"the previous run on this actuator ended {_s(now_s - last_end_s)} ago;"
-                    f" the cool-down is {_s(limits.cooldown_s)}. Try again in {_s(rest_left_s)}",
+                    f"the previous run on this actuator ended {_s(now_s - last_end_s)} ago"
+                    f"{records}; the cool-down is {_s(limits.cooldown_s)}. Try again in"
+                    f" {_s(rest_left_s)}" + ("" if reason is None else f". {_sentence(reason)}"),
                 )
             self.refuse(TOO_WARM, self.too_warm_message(temperature_degc))
 
@@ -760,7 +777,10 @@ class _Run:
         finally:
             waited_s = self.clock.now_s() - start_s
             self.cooled_s += waited_s
-            self.notes.append(f"waited {_s(waited_s)} at rest in the safe state to cool down")
+            self.notes.append(
+                f"waited {_s(waited_s)} at rest in the safe state to cool down"
+                + ("" if reason is None else f". The cool-down was held because: {reason}")
+            )
 
     def too_warm_message(self, temperature_degc: float) -> str:
         return (
@@ -1416,6 +1436,10 @@ def _params_note(params: ServoParams) -> str:
     if params == DEFAULT_PARAMS:
         return "default placeholder model parameters, not measured on any real servo"
     return "the model parameters given for the rehearsal"
+
+
+def _sentence(text: str) -> str:
+    return text[:1].upper() + text[1:]
 
 
 def _valid_time(value: object) -> bool:

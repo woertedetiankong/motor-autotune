@@ -553,3 +553,90 @@ def test_a_call_slower_than_declared_is_a_device_problem_exit_4():
     assert refused.outcome is Outcome.REFUSED and refused.stop.kind == runner.CALL_TIME_EXCEEDED
     assert refused.stop.stage == runner.PREFLIGHT and refused.trace is None
     assert int(judge_run(refused).exit_code) == 4
+
+
+# -- an unreadable run record and the cool-down across invocations -------------------------
+#
+# When the tool cannot establish when the actuator last ran, it assumes the
+# worse case: a directory under runs/ named like a run (by the time it was
+# written) whose run.json cannot be read counts as a run of this actuator that
+# ended at the time in its name, or just now if its name holds no valid time
+# or a time in the future. A directory not named like a run is not one.
+
+REFUSE = {"when_too_warm": '"refuse"'}
+
+
+def _spoil(run_dir, how):
+    run_json = run_dir / records.RUN_FILE
+    if how == "not json":
+        run_json.write_text("{ this is not json", encoding="utf-8")
+    elif how == "missing":
+        run_json.unlink()
+    elif how == "binary":
+        run_json.write_bytes(b"\xff\xfe\x00garbage\x80")
+    elif how == "no time zone":
+        info = json.loads(run_json.read_text(encoding="utf-8"))
+        info["ended_utc"] = "2026-11-16T10:00:00"  # a time with no zone cannot be compared
+        run_json.write_text(json.dumps(info), encoding="utf-8")
+    else:
+        raise AssertionError(how)
+
+
+@pytest.mark.parametrize("how", ["not json", "missing", "binary", "no time zone"])
+def test_an_unreadable_latest_record_still_holds_the_cool_down_with_refuse(here, capsys, how):
+    code, first = check(here, capsys, **REFUSE)
+    assert code == 0, first["summary"]
+    _spoil(here / first["run_dir"], how)
+    code, second = check(here, capsys, **REFUSE)
+    assert code == 3, second["summary"]
+    assert second["verdict"] == "refused"
+    assert second["metrics"]["run"]["stop_kind"] == runner.COOLDOWN
+    message = second["metrics"]["run"]["stop_message"]
+    assert first["run_dir"] in message and "cannot be read" in message
+    assert "time in its name" in message and "Try again in" in message
+    assert "move" in message  # how the owner gets out of it
+    assert first["run_dir"] in second["summary"]
+    cooldown = second["metrics"]["cooldown"]
+    assert cooldown["previous_run"] == first["run_dir"]
+    assert cooldown["previous_run_readable"] is False
+    assert 55.0 < cooldown["rest_left_s"] <= 60.0
+
+
+def test_an_unreadable_latest_record_is_waited_out_with_wait_and_says_why(here, capsys):
+    _, first = check(here, capsys)
+    _spoil(here / first["run_dir"], "not json")
+    code, second = check(here, capsys)
+    assert code == 0, second["summary"]
+    rest_s = second["metrics"]["cooldown"]["rest_left_s"]
+    assert rest_s > 55.0
+    assert second["metrics"]["run"]["cooled_s"] == pytest.approx(rest_s, abs=0.5)
+    # The reader is told why it waited, and which record could not be read.
+    assert "cool-down" in second["summary"] and first["run_dir"] in second["summary"]
+    assert "cannot be read" in second["summary"]
+    assert "move" in second["next"] and first["run_dir"] in second["next"]
+    assert any(first["run_dir"] in note for note in second["metrics"]["run"]["notes"])
+
+
+@pytest.mark.parametrize(
+    "name", ["20991231T235959Z-check-sim-1", "20261399T999999Z-check-sim-1"], ids=["future", "bad"]
+)
+def test_an_unreadable_record_without_a_usable_time_counts_as_just_ended(here, capsys, name):
+    (here / "runs" / name).mkdir(parents=True)  # a run directory with no run.json
+    code, output = check(here, capsys, **REFUSE)
+    assert code == 3, output["summary"]
+    assert output["metrics"]["run"]["stop_kind"] == runner.COOLDOWN
+    assert output["metrics"]["cooldown"]["rest_left_s"] == pytest.approx(60.0, abs=1.0)
+    message = output["metrics"]["run"]["stop_message"]
+    assert name in message and "just ended" in message
+    # Waiting does not help: the record holds the cool-down until the owner acts.
+    assert output["needs_human"] is True
+    assert "every run" in output["next"] and "move" in output["next"]
+    assert "Wait that long" not in output["next"]  # waiting would not help
+
+
+def test_a_stray_directory_that_is_not_a_run_does_not_hold_the_cool_down(here, capsys):
+    (here / "runs" / "notes").mkdir(parents=True)
+    (here / "runs" / "notes" / "todo.txt").write_text("calibrate\n", encoding="utf-8")
+    code, output = check(here, capsys, **REFUSE)
+    assert code == 0, output["summary"]
+    assert any("notes" in note and "not a run" in note for note in output["metrics"]["notes"])

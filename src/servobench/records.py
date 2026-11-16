@@ -46,13 +46,25 @@ files that were written. Floats are written with all their digits, so
 printed); ``run_summary`` is the experiment runner's own. ``ended_utc`` is when
 the command got the actuator back from the runner, in its safe state, from the
 computer's calendar clock: the next invocation reads it to hold the cool-down
-(``latest_enabled_run``). A command that only read from the actuator, and never
+(``records_for_cooldown``). A command that only read from the actuator, and never
 ran an experiment, writes its record with ``write_readonly_run``: no spec,
 outcome, safe state or traces, which ``load_run`` gives back as None. A
 command made of several runs (``characterize``) writes each run's record with
 ``write_run`` and then one record of its own with ``write_command_record``:
 no spec or trace of its own, its ``parts`` (the run directories of its runs)
 and the files it wrote into its directory.
+
+When a record cannot be read. The cool-down across invocations needs to know
+when the actuator last ran, and a record that cannot be read (no run.json,
+not JSON, not UTF-8, an unknown format, a missing field, a time without a time
+zone) cannot say. The tool then assumes the worse case: a directory whose name
+starts as a run directory's does (``<UTC date and time>-``) and whose run.json
+cannot be read counts as a run of this actuator, whatever target its name
+gives, that ended at the time in its name, which is when its record was
+written and so no earlier than the run ended; if the name's time is not a valid
+time, the run counts as having just ended. A directory not named like that was
+not written by the tool and is not a run: it is listed, and does not count.
+``records_for_cooldown`` gives all three.
 """
 
 from __future__ import annotations
@@ -118,10 +130,37 @@ DEFAULT_VERDICTS = {
 }
 
 _SAMPLE_META = ("t_s", "elapsed_s", "segment")
+# Every run directory's name starts with the UTC time it was written.
+_NAME_TIME_FORMAT = "%Y%m%dT%H%M%SZ"
+_RUN_NAME = re.compile(r"(\d{8}T\d{6}Z)-")
 
 
 class RecordError(Exception):
     """A run directory is missing, incomplete or of an unknown format."""
+
+
+@dataclass(frozen=True)
+class UnreadableRecord:
+    """A directory named like a run directory whose run.json cannot be read."""
+
+    path: Path
+    problem: str  # why it cannot be read
+    named_utc: datetime.datetime | None  # the time in its name; None if not a valid time
+
+
+@dataclass(frozen=True)
+class CooldownRecords:
+    """What runs/ says about when an actuator last ran, for the cool-down.
+
+    ``latest`` is the newest readable record of a run that enabled this
+    actuator. Every entry of ``unreadable`` counts as a run of this actuator
+    too (see "When a record cannot be read" in the module text). ``not_runs``
+    are directories not named like a run directory, which do not count.
+    """
+
+    latest: RunSummary | None
+    unreadable: tuple[UnreadableRecord, ...]
+    not_runs: tuple[Path, ...]
 
 
 @dataclass(frozen=True)
@@ -426,10 +465,11 @@ def list_runs(runs_dir: str | Path = RUNS_DIR) -> tuple[list[RunSummary], list[s
 def latest_enabled_run(
     adapter: str, device_id: str | None, runs_dir: str | Path = RUNS_DIR
 ) -> RunSummary | None:
-    """The run that most recently ended with this actuator enabled, from the records.
+    """The run that most recently ended with this actuator enabled, from the readable records.
 
     "This actuator" is the same adapter name and device id. A record that
-    cannot be read is passed over.
+    cannot be read is passed over here; for the cool-down, which must not pass
+    over one, use ``records_for_cooldown``.
     """
     runs, _ = list_runs(runs_dir)
     matching = [
@@ -438,6 +478,48 @@ def latest_enabled_run(
         if run.enabled and run.adapter == adapter and run.device_id == device_id
     ]
     return max(matching, key=lambda run: run.ended_utc, default=None)
+
+
+def records_for_cooldown(
+    adapter: str, device_id: str | None, runs_dir: str | Path = RUNS_DIR
+) -> CooldownRecords:
+    """Every record under ``runs_dir`` that bears on when this actuator last ran.
+
+    Reads only each run.json. A missing ``runs_dir`` has none.
+    """
+    runs_dir = Path(runs_dir)
+    if not runs_dir.is_dir():
+        return CooldownRecords(None, (), ())
+    latest: RunSummary | None = None
+    unreadable: list[UnreadableRecord] = []
+    not_runs: list[Path] = []
+    for path in sorted(runs_dir.iterdir()):
+        if not path.is_dir():
+            continue
+        try:
+            run = _summary_of(path)
+        except RecordError as error:
+            match = _RUN_NAME.match(path.name)
+            if match is None:
+                not_runs.append(path)
+                continue
+            if not (path / RUN_FILE).is_file():
+                problem = f"there is no {RUN_FILE} in it"
+            else:  # the error without the path, which the caller shows anyway
+                problem = str(error).removeprefix(f"{path / RUN_FILE}: ").removeprefix(f"{path}: ")
+            unreadable.append(UnreadableRecord(path, problem, _name_time(match.group(1))))
+            continue
+        if run.enabled and run.adapter == adapter and run.device_id == device_id:
+            if latest is None or run.ended_utc > latest.ended_utc:
+                latest = run
+    return CooldownRecords(latest, tuple(unreadable), tuple(not_runs))
+
+
+def _name_time(text: str) -> datetime.datetime | None:
+    try:
+        return datetime.datetime.strptime(text, _NAME_TIME_FORMAT).replace(tzinfo=datetime.UTC)
+    except ValueError:
+        return None
 
 
 def load_run(path: str | Path) -> RunRecord:
@@ -498,7 +580,7 @@ def _run_directory(
     written_at: datetime.datetime,
 ) -> Path:
     target = adapter + (f"-{device_id}" if device_id else "")
-    name = f"{written_at:%Y%m%dT%H%M%SZ}-{_safe(command)}-{_safe(target)}"
+    name = f"{written_at.strftime(_NAME_TIME_FORMAT)}-{_safe(command)}-{_safe(target)}"
     return _new_directory(Path(runs_dir), name)
 
 
@@ -648,7 +730,11 @@ def _summary_of(path: Path) -> RunSummary:
         info = json.loads((path / RUN_FILE).read_text(encoding="utf-8"))
     except FileNotFoundError:
         raise RecordError(f"{path}: no {RUN_FILE}; not a run directory") from None
-    except (OSError, json.JSONDecodeError) as error:
+    except json.JSONDecodeError as error:
+        raise RecordError(f"{path / RUN_FILE}: not valid JSON: {error}") from None
+    except UnicodeDecodeError as error:
+        raise RecordError(f"{path / RUN_FILE}: not UTF-8 text: {error}") from None
+    except OSError as error:
         raise RecordError(f"{path / RUN_FILE}: cannot be read: {error}") from None
     if not isinstance(info, dict) or info.get("format") != FORMAT:
         raise RecordError(f"{path}: unknown record format")
@@ -659,6 +745,9 @@ def _summary_of(path: Path) -> RunSummary:
         }
         written = datetime.datetime.fromisoformat(info["written_utc"])
         ended = datetime.datetime.fromisoformat(info.get("ended_utc") or info["written_utc"])
+        for name, value in (("written_utc", written), ("ended_utc", ended)):
+            if value.utcoffset() is None:
+                raise ValueError(f"{name} {value.isoformat()} has no time zone")
         trace = info["trace"]
         adapter, device_id = target["adapter"], target["device_id"]
         return RunSummary(

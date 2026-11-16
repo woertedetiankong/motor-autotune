@@ -26,7 +26,9 @@ The sequence:
    hangs, and sized from the bench limits. Before each experiment it waits until
    ``cooldown`` has passed since the previous one ended, on the adapter's clock
    (the runner holds the same rest, and refuses or waits for temperature as the
-   bench file says). If a run does not complete (refused, aborted, an error,
+   bench file says). The rest after a run in an earlier invocation is
+   ``check``'s, including its rule for a record that cannot be read; when that
+   made check wait, the summary says so. If a run does not complete (refused, aborted, an error,
    the safe state not confirmed), the sequence stops there: nothing more is
    run, nothing is fitted, and the verdict, exit code and ``needs_human`` are
    ``judge_run``'s, as for ``check``. If a run's record cannot be written, the
@@ -1007,6 +1009,18 @@ class _Characterize:
     def finish(self, result: CommandResult, *, exported=None, mujoco=None, overlay=None):
         if not result.metrics:
             result.metrics = self.base_metrics()
+        check = self.check
+        cooldown = (check.metrics.get("cooldown") or {}) if check is not None else {}
+        if check is not None and check.verdict == PASS and cooldown.get("notice"):
+            # check passed after waiting because a record cannot be read: say so here
+            # too (a check that did not pass is quoted in full already).
+            result.summary += (
+                f" check waited {_s(cooldown['rest_left_s'])} for the cool-down first, because"
+                f" {cooldown['notice']}."
+            )
+            result.next = f"{result.next or ''} Tell the owner: {cooldown['remedy']}.".strip()
+            if cooldown.get("holds_until_fixed"):
+                result.needs_human = True
         # Before the record, so that the record says the same.
         keep_safe_state_report(result, self.watch)
         if self.check is not None and self.check.run_dir:

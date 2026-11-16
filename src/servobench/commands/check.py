@@ -85,7 +85,17 @@ The cool-down across invocations. Before the moves, the newest record under
 ``runs/`` of a run that enabled this actuator (same adapter name and device
 id) gives the time since that run ended (``ended_utc``), which is handed to the
 runner with ``note_previous_run``. With no such record, only
-``start_temperature_max`` applies. Records of other actuators are ignored.
+``start_temperature_max`` applies. Readable records of other actuators are
+ignored. When the tool cannot establish when the actuator last ran, it assumes
+the worse case (``records.records_for_cooldown``): a directory named like a run
+record whose run.json cannot be read counts as a run of this actuator that
+ended at the time in its name, or just now if that time is not valid or is in
+the future. If such a record holds the cool-down, the runner's refusal (with
+``when_too_warm = "refuse"``) or check's summary (with ``"wait"``) names it and
+says how the owner gets out of it: repair its run.json, or move the directory
+out of ``runs/``. A record that holds the cool-down on every run (no usable
+time) sets ``needs_human``. A directory not named like a run record is not one:
+it is noted and does not count.
 """
 
 from __future__ import annotations
@@ -127,6 +137,7 @@ from servobench.contract import (
     Support,
 )
 from servobench.experiments.runner import (
+    COOLDOWN,
     GAP_CALLS_MIN,
     RunResult,
     SafeStateWatch,
@@ -842,28 +853,105 @@ class _Check:
     def previous_run(self, adapter: Adapter) -> dict[str, Any]:
         identity = self.description.identity
         cooldown_s = self.bench.limits.cooldown_s
-        last = records.latest_enabled_run(identity.adapter, identity.device_id, self.runs_dir)
-        if last is None:
+        found = records.records_for_cooldown(identity.adapter, identity.device_id, self.runs_dir)
+        now = utc_now()
+        for path in found.not_runs:
+            self.notes.append(
+                f"{path} is not a run record: its name does not start with the time a record was"
+                " written, so it does not count for the cool-down."
+            )
+        # (when it ended, its directory, the unreadable record or None)
+        candidates: list[tuple[Any, Path, records.UnreadableRecord | None]] = []
+        if found.latest is not None:
+            candidates.append((found.latest.ended_utc, found.latest.path, None))
+        for record in found.unreadable:
+            named = record.named_utc
+            assumed = named if named is not None and named <= now else now
+            candidates.append((assumed, record.path, record))
+            self.notes.append(
+                f"The run record {record.path} cannot be read ({record.problem}); for the"
+                f" cool-down it counts as a run of this actuator that ended"
+                + (" just now." if assumed is now else f" at {_utc(assumed)}.")
+            )
+        unreadable = [str(record.path) for record in found.unreadable]
+        not_runs = [str(path) for path in found.not_runs]
+        if not candidates:
             self.notes.append(
                 f"No earlier run that enabled this actuator is recorded under {self.runs_dir};"
                 " no cool-down applies, only start_temperature_max."
             )
-            return {"previous_run": None, "cooldown_s": cooldown_s, "rest_left_s": 0.0}
-        ago_s = (utc_now() - last.ended_utc).total_seconds()
-        note_previous_run(adapter, ago_s)
+            return {
+                "previous_run": None,
+                "cooldown_s": cooldown_s,
+                "rest_left_s": 0.0,
+                "not_run_directories": not_runs,
+            }
+        ended, path, record = max(candidates, key=lambda candidate: candidate[0])
+        ago_s = (now - ended).total_seconds()
+        cause = remedy = None
+        holds = False
+        if record is not None:
+            cause, remedy, holds = self.unreadable_reason(record, now)
+        note_previous_run(
+            adapter, ago_s, reason=None if record is None else f"{cause}. {_sentence(remedy)}"
+        )
         rest_left_s = max(0.0, cooldown_s - max(0.0, ago_s))
         if rest_left_s > 0 and identity.simulated and self.bench.runner.when_too_warm == WAIT:
             self.notes.append(
-                f"The cool-down after {last.name} had {_s(rest_left_s)} left. The simulated servo"
+                f"The cool-down after {path.name} had {_s(rest_left_s)} left. The simulated servo"
                 " waits on its own virtual clock, so no real time passed."
             )
+        held = record is not None and rest_left_s > 0
         return {
-            "previous_run": str(last.path),
-            "previous_run_ended_utc": last.ended_utc.isoformat(),
+            "previous_run": str(path),
+            "previous_run_ended_utc": ended.isoformat(),
+            "previous_run_readable": record is None,
+            "previous_run_problem": None if record is None else record.problem,
             "ended_s_ago": ago_s,
             "cooldown_s": cooldown_s,
             "rest_left_s": rest_left_s,
+            "unreadable_records": unreadable,
+            "not_run_directories": not_runs,
+            # When an unreadable record holds the cool-down: why, and what the owner can do.
+            "notice": cause if held else None,
+            "remedy": remedy if held else None,
+            "holds_until_fixed": held and holds,
         }
+
+    def unreadable_reason(
+        self, record: records.UnreadableRecord, now
+    ) -> tuple[str, str, bool]:
+        """Why an unreadable record holds the cool-down, what the owner can do, and whether
+        it will hold it on every run until they do."""
+        named = record.named_utc
+        unreadable = f"the run record {record.path} cannot be read ({record.problem})"
+        if named is not None and named <= now:
+            cause = (
+                f"{unreadable}, so it is taken as a run of this actuator that ended at the time"
+                f" in its name, {_utc(named)}"
+            )
+            remedy = (
+                f"to stop it holding the cool-down, repair its {records.RUN_FILE} or move"
+                f" {record.path} out of {self.runs_dir}/, once you know when the actuator last ran"
+            )
+            return cause, remedy, False
+        if named is None:
+            cause = (
+                f"{unreadable} and the time in its name is not a valid time, so it is taken as"
+                " a run of this actuator that has just ended"
+            )
+        else:
+            cause = (
+                f"{unreadable} and the time in its name, {_utc(named)}, is in the future (the"
+                " computer's clock may have been changed), so it is taken as a run of this"
+                " actuator that has just ended"
+            )
+        remedy = (
+            f"until its {records.RUN_FILE} is repaired or {record.path} is moved out of"
+            f" {self.runs_dir}/ (once you know when the actuator last ran), it holds the cool-down"
+            " on every run: waiting does not help"
+        )
+        return cause, remedy, True
 
     def direction_item(self, analysis: StepAnalysis) -> Item:
         steps = []
@@ -1074,6 +1162,25 @@ class _Check:
             summary = f"Pass: all {len(items) - len(warnings)} measured items passed."
         if error is None and verdict in (PASS, PARTIAL, FAIL) and warnings:
             summary += " Warning: " + " ".join(item.detail for item in warnings)
+        cooldown = self.cooldown or {}
+        if cooldown.get("notice"):
+            refused = result is not None and result.stop is not None and (
+                result.stop.kind == COOLDOWN
+            )
+            if not refused:  # a refusal's own message already says all this
+                summary += (
+                    f" Waited {_s(cooldown['rest_left_s'])} for the cool-down before the moves,"
+                    f" because {cooldown['notice']}."
+                )
+                next_ = f"{next_ or ''} Tell the owner: {cooldown['remedy']}.".strip()
+            if cooldown.get("holds_until_fixed"):
+                needs_human = True
+                if refused:  # judge_run's "wait that long" would not help here
+                    next_ = (
+                        f"{result.stop.message}. Nothing moved. Tell the human: do not wait and"
+                        " retry, because this record holds the cool-down on every run until the"
+                        " owner repairs or moves it."
+                    )
 
         metrics: dict[str, Any] = {
             "items": {item.name: item.to_json() for item in items},
@@ -1257,3 +1364,11 @@ def _hz(value_hz: float) -> str:
 
 def _s(value_s: float) -> str:
     return format_quantity(value_s, Dimension.TIME, "s", digits=3)
+
+
+def _sentence(text: str) -> str:
+    return text[:1].upper() + text[1:]
+
+
+def _utc(when) -> str:
+    return f"{when:%Y-%m-%d %H:%M:%S} UTC"
