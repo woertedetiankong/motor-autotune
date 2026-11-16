@@ -234,3 +234,165 @@ def test_a_failure_after_an_unconfirmed_safe_state_never_reads_as_safe(
     assert output["needs_human"] is True and "cut its power" in output["next"]
     for claim in ("had not left the actuator enabled", "never leaves the actuator enabled"):
         assert claim not in output["next"] and claim not in output["summary"]
+
+
+# == Regressions from the second outside review, 2026-11-16 ===========================
+#
+# The safe-state warning must reach stderr, flushed, before anything is tried
+# on stdout, and no failure to write either stream may raise out of the
+# command or change its exit code, the interpreter's own flush at exit included.
+
+import io  # noqa: E402
+import os  # noqa: E402
+import subprocess  # noqa: E402
+import sys  # noqa: E402
+
+UNSAFE = CommandResult(
+    "check", "safe_state_not_confirmed", "SAFE STATE NOT CONFIRMED. Cut its power.",
+    ExitCode.DEVICE, True, next="Tell the human now.",
+)  # fmt: skip
+
+
+class _Stream(io.TextIOBase):
+    """Logs every write and flush to ``log`` (shared between streams), and may fail."""
+
+    def __init__(self, name, log, broken=False):
+        self.label, self.log, self.broken = name, log, broken
+
+    def writable(self):
+        return True
+
+    def write(self, text):
+        self.log.append((self.label, "write", text))
+        if self.broken:
+            raise BrokenPipeError(32, "Broken pipe")
+        return len(text)
+
+    def flush(self):
+        self.log.append((self.label, "flush", ""))
+        if self.broken:
+            raise BrokenPipeError(32, "Broken pipe")
+
+    def close(self):
+        self.broken = False  # so that finalising this test stream never raises
+        super().close()
+
+
+def _streams(monkeypatch, *, stdout_broken=False, stderr_broken=False):
+    log = []
+    monkeypatch.setattr(sys, "stdout", _Stream("stdout", log, stdout_broken))
+    monkeypatch.setattr(sys, "stderr", _Stream("stderr", log, stderr_broken))
+    return log
+
+
+def _written(log, name):
+    return "".join(text for stream, kind, text in log if stream == name and kind == "write")
+
+
+@pytest.mark.parametrize("as_json", [True, False], ids=["json", "text"])
+@pytest.mark.parametrize("stdout_broken", [False, True], ids=["stdout-open", "stdout-broken"])
+def test_the_safe_state_warning_is_on_stderr_and_flushed_before_stdout_is_tried(
+    monkeypatch, as_json, stdout_broken
+):
+    log = _streams(monkeypatch, stdout_broken=stdout_broken)
+    assert cli._emit(UNSAFE, as_json=as_json) == 4
+    assert "SAFE STATE NOT CONFIRMED" in _written(log, "stderr")
+    first_stdout = next(i for i, (stream, _, _) in enumerate(log) if stream == "stdout")
+    before = log[:first_stdout]
+    assert ("stderr", "flush", "") in before, log
+    assert "SAFE STATE NOT CONFIRMED" in "".join(text for _, _, text in before)
+
+
+@pytest.mark.parametrize("as_json", [True, False], ids=["json", "text"])
+@pytest.mark.parametrize(
+    ("verdict", "code"),
+    [
+        ("pass", ExitCode.PASS),
+        ("fail", ExitCode.FAIL),
+        ("error", ExitCode.USAGE),
+        ("refused", ExitCode.SAFETY),
+        ("error", ExitCode.DEVICE),
+        ("safe_state_not_confirmed", ExitCode.DEVICE),
+    ],
+)
+@pytest.mark.parametrize(
+    "broken", ["stdout", "stderr", "both"], ids=lambda which: f"{which}-broken"
+)
+def test_a_stream_that_cannot_be_written_never_raises_or_changes_the_exit_code(
+    monkeypatch, as_json, verdict, code, broken
+):
+    _streams(
+        monkeypatch,
+        stdout_broken=broken in ("stdout", "both"),
+        stderr_broken=broken in ("stderr", "both"),
+    )
+    result = CommandResult("check", verdict, f"{verdict}: a summary.", code, True)
+    assert cli._emit(result, as_json=as_json) == int(code)
+
+
+def test_check_with_an_unconfirmed_safe_state_and_a_closed_stdout_returns_4(
+    tmp_path, monkeypatch
+):
+    from servobench.adapters.sim import SimServo
+    from servobench.contract import CommunicationError
+
+    def never_safe(self):
+        raise CommunicationError("device gone")
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "bench.toml").write_text(TEMPLATE, encoding="utf-8")
+    monkeypatch.setattr(SimServo, "enter_safe_state", never_safe)
+    log = _streams(monkeypatch, stdout_broken=True)
+    assert main(["check", "--json"]) == 4
+    assert _written(log, "stderr").startswith("servobench: SAFE STATE NOT CONFIRMED")
+
+
+# -- in a real process: the interpreter flushes stdout again at exit -----------------
+
+_ENTRY = "import sys; from servobench.cli import main; sys.exit(main())"  # as the script does
+
+
+def _run_with_closed_stdout(cwd, *args, close_stderr=False):
+    read_end, write_end = os.pipe()
+    os.close(read_end)  # nobody will ever read: every write to it fails (EPIPE)
+    try:
+        return subprocess.run(
+            [sys.executable, "-c", _ENTRY, *args],
+            cwd=cwd,
+            stdout=write_end,
+            stderr=write_end if close_stderr else subprocess.PIPE,
+            stdin=subprocess.DEVNULL,
+            text=True,
+            timeout=120,
+        )
+    finally:
+        os.close(write_end)
+
+
+def _bench_with_faults(tmp_path, *faults):
+    text = TEMPLATE.replace('# faults = ["wrong_zero"]', f"faults = {json.dumps(list(faults))}")
+    (tmp_path / "bench.toml").write_text(text, encoding="utf-8")
+
+
+@pytest.mark.parametrize("mode", [["--json"], []], ids=["json", "text"])
+def test_a_real_process_with_a_closed_stdout_keeps_exit_4_and_the_warning(tmp_path, mode):
+    _bench_with_faults(tmp_path, "ignores_safe_state")
+    done = _run_with_closed_stdout(tmp_path, "check", *mode)
+    assert done.returncode == 4, done.stderr
+    assert done.stderr.startswith("servobench: SAFE STATE NOT CONFIRMED"), done.stderr
+    assert "Traceback" not in done.stderr and "Exception ignored" not in done.stderr
+
+
+@pytest.mark.parametrize("mode", [["--json"], []], ids=["json", "text"])
+def test_a_real_process_with_a_closed_stdout_keeps_exit_0(tmp_path, mode):
+    _bench_with_faults(tmp_path)
+    done = _run_with_closed_stdout(tmp_path, "check", "--no-motion", *mode)
+    assert done.returncode == 0, done.stderr
+    assert done.stderr == ""
+
+
+def test_a_real_process_with_both_streams_closed_keeps_its_exit_code(tmp_path):
+    _bench_with_faults(tmp_path, "ignores_safe_state")
+    assert _run_with_closed_stdout(tmp_path, "check", close_stderr=True).returncode == 4
+    _bench_with_faults(tmp_path)
+    assert _run_with_closed_stdout(tmp_path, "init", close_stderr=True).returncode == 2

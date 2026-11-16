@@ -204,6 +204,8 @@ SIM_FAULTS: dict[str, str] = {
     "stuck_position": "the position reading never changes, although the servo moves",
     "runaway": "once enabled, the servo drives away at full torque and ignores position"
     " commands; turning torque off still works",
+    "ignores_safe_state": "the servo never acknowledges a request to enter its safe state: the"
+    " request is lost and torque stays on, so the tool cannot confirm the safe state",
 }
 
 SIM_ADAPTER = "sim"
@@ -679,6 +681,9 @@ length = "100 mm"
 #   "dropped_replies"     about one read in four gets no reply
 #   "stuck_position"      the position reading never changes
 #   "runaway"             once enabled, it drives away and ignores commands
+#   "ignores_safe_state"  it never acknowledges the safe state; torque stays on,
+#                         so every run that enables it ends with verdict
+#                         safe_state_not_confirmed (exit 4)
 # faults = ["wrong_zero"]
 #
 # Random seed. The same seed gives the same samples.

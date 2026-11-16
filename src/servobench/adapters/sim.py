@@ -85,8 +85,17 @@ OVERHEATING = "overheating"
 DROPPED_REPLIES = "dropped_replies"
 STUCK_POSITION = "stuck_position"
 RUNAWAY = "runaway"
+IGNORES_SAFE_STATE = "ignores_safe_state"
 _IMPLEMENTED_FAULTS = frozenset(
-    {REVERSED_DIRECTION, WRONG_ZERO, OVERHEATING, DROPPED_REPLIES, STUCK_POSITION, RUNAWAY}
+    {
+        REVERSED_DIRECTION,
+        WRONG_ZERO,
+        OVERHEATING,
+        DROPPED_REPLIES,
+        STUCK_POSITION,
+        RUNAWAY,
+        IGNORES_SAFE_STATE,
+    }
 )
 if _IMPLEMENTED_FAULTS != frozenset(SIM_FAULTS):  # the bench-file schema and this file must agree
     raise ImportError("servobench.limits.SIM_FAULTS and the simulator's faults differ")
@@ -298,6 +307,15 @@ class SimServo(Adapter):
 
     def enter_safe_state(self) -> None:
         self._check_open()
+        if IGNORES_SAFE_STATE in self.config.faults:
+            # The request is lost: the host waits for an acknowledgement until
+            # the timeout, and torque stays on.
+            timeout_s = self.config.reply_timeout_s
+            self._clock.wait_until_s(self._clock.now_s() + timeout_s)
+            raise NoReply(
+                f"the simulated servo did not acknowledge the safe-state request within"
+                f" {timeout_s} s; its torque is still on"
+            )
         _, t_device_s, _ = self._transaction(reply=False)
         self._integrator.set_torque_on(t_device_s, False)
         self._integrator.cancel_setpoints_after(t_device_s)

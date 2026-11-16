@@ -8,6 +8,18 @@ Nothing escapes as a bare traceback: a usage error, a bench-file error, Ctrl-C
 and an unexpected exception each become a result with a verdict and a non-zero
 exit code, and an unexpected exception keeps its traceback, in the JSON under
 ``error`` and in the text output.
+
+Writing the result (``_emit``). A ``safe_state_not_confirmed`` result's summary
+is written to standard error and flushed first, in text and JSON mode, before
+anything is tried on standard output, so the most important message cannot be
+lost to a broken pipe on stdout. A stream that cannot be written (a closed
+pipe, a full disk, a closed terminal) is given up on: the error is not raised,
+the exit code stays the one the result calls for, and the stream's file
+descriptor is pointed at the null device so that the interpreter's own flush
+at exit cannot fail and turn the exit code into 120. This is the handling the
+Python ``signal`` documentation describes for SIGPIPE; SIGPIPE itself is left
+ignored, as Python sets it, because dying of the signal would lose the exit
+code too.
 """
 
 from __future__ import annotations
@@ -15,8 +27,9 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
-from typing import NoReturn
+from typing import NoReturn, TextIO
 
 from servobench import __version__
 from servobench.adapters import UnknownAdapter
@@ -55,6 +68,11 @@ class _Parser(argparse.ArgumentParser):
 
     def error(self, message: str) -> NoReturn:
         raise _UsageError(f"{self.prog}: {message}")
+
+    def _print_message(self, message: str, file: TextIO | None = None) -> None:
+        # --help and --version print through here; a broken stream must not raise.
+        if message:
+            _write(file if file is not None else sys.stderr, message, end="")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -308,6 +326,7 @@ def _usage_error(problem: str, usage: str) -> CommandResult:
 
 
 def _emit(result: CommandResult, as_json: bool) -> int:
+    """Write ``result`` and return its exit code. Never raises (see the module text)."""
     try:
         if as_json:
             text = json.dumps(result.to_json(), indent=2, allow_nan=False)
@@ -326,12 +345,48 @@ def _emit(result: CommandResult, as_json: bool) -> int:
             failure.next = result.next
         text = json.dumps(failure.to_json(), indent=2) if as_json else _text(failure)
         result = failure
-    stream = sys.stderr if result.exit_code == ExitCode.USAGE and not as_json else sys.stdout
-    print(text, file=stream)
-    if as_json and result.verdict == SAFE_STATE_NOT_CONFIRMED:
-        # A person watching the terminal sees this even when only an agent reads the JSON.
-        print(f"servobench: {result.summary}", file=sys.stderr)
-    return int(result.exit_code)
+    code = int(result.exit_code)
+    if result.verdict == SAFE_STATE_NOT_CONFIRMED:
+        # First, and flushed: a person watching the terminal sees it even when only
+        # an agent reads the JSON, and even if standard output turns out to be broken.
+        _write(sys.stderr, f"servobench: {result.summary}")
+    _write(sys.stderr if result.exit_code == ExitCode.USAGE and not as_json else sys.stdout, text)
+    return code
+
+
+def _write(stream: TextIO | None, text: str, end: str = "\n") -> bool:
+    """Write and flush ``text``; whether it worked. Never raises.
+
+    On failure the stream is given up on: its file descriptor, if it has one,
+    is pointed at the null device, so that whatever is still buffered is
+    discarded at exit instead of failing again in the interpreter's own flush.
+    """
+    if stream is None:  # no such stream at all, for example under pythonw
+        return False
+    try:
+        stream.write(text + end)
+        stream.flush()
+        return True
+    except Exception:  # noqa: BLE001 - a broken pipe, a full disk, a closed file, ...
+        _discard_further_output(stream)
+        return False
+
+
+def _discard_further_output(stream: TextIO) -> None:
+    try:
+        fd = stream.fileno()
+    except Exception:  # noqa: BLE001 - not backed by a file descriptor: nothing to redirect
+        return
+    try:
+        devnull = os.open(os.devnull, os.O_WRONLY)
+    except OSError:
+        return
+    try:
+        os.dup2(devnull, fd)
+    except OSError:
+        pass
+    finally:
+        os.close(devnull)
 
 
 def _text(result: CommandResult) -> str:

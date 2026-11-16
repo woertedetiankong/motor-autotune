@@ -12,7 +12,7 @@ The bench file, `bench.toml` in the directory where the tool runs, belongs to th
 
 ## Real hardware and the simulated servo
 
-`bench.toml`'s `[target] adapter` says what is being driven. `"sim"` is the built-in simulated servo, which needs no hardware and runs on virtual time, so a check takes well under a second. Run anything you like against it. To see how the tool reports a fault, work in a scratch directory of your own: run `servobench init` there, and in that copy set `[sim] faults`, for example `faults = ["reversed_direction"]` (the template lists them all). A bench file you created yourself for the simulated servo is yours to change. The owner's is not, and the tool refuses `[sim]` settings for any adapter other than `"sim"`.
+`bench.toml`'s `[target] adapter` says what is being driven. `"sim"` is the built-in simulated servo, which needs no hardware and runs on virtual time, so a check takes well under a second. Run anything you like against it. To see how the tool reports a fault, work in a scratch directory of your own: run `servobench init` there, and in that copy set `[sim] faults`, for example `faults = ["reversed_direction"]` (the template lists them all). `faults = ["ignores_safe_state"]` shows you the most serious verdict, `safe_state_not_confirmed`, for real: the simulated servo never acknowledges the request to turn torque off. A bench file you created yourself for the simulated servo is yours to change. The owner's is not, and the tool refuses `[sim]` settings for any adapter other than `"sim"`.
 
 Any other adapter is real hardware. A motor has no undo, and the human's hand on the power switch is the last safety layer. So:
 
@@ -36,7 +36,7 @@ Every `check` writes a run record: a directory under `runs/` named by time, comm
 
 ## Reading the output
 
-Always pass `--json`. The tool then prints exactly one JSON object on standard output, even for a usage error or an internal error. Branch on `verdict` and `exit_code`, then read `next`.
+Always pass `--json`. The tool then prints exactly one JSON object on standard output, even for a usage error or an internal error. Branch on `verdict` and `exit_code`, then read `next`. The exit code does not depend on the output being read: if standard output or standard error cannot be written (for example a pipe whose reader has exited), the tool gives that stream up and still exits with the code the result calls for, so check the exit code even when the JSON did not arrive.
 
 ```json
 {
@@ -129,7 +129,7 @@ Two limits of the result, which you should mention when you report one: the para
 
 Stop, and tell the human in plain words before doing anything else with this actuator, when:
 
-- **The verdict is `safe_state_not_confirmed`.** This is the most serious result. The actuator may still be powered and holding or driving its output. Tell the human at once that they should cut its power, then run nothing against it, not even read-only commands, until they have checked it. With `--json` the tool also prints this summary on standard error, so that a person watching the terminal sees it.
+- **The verdict is `safe_state_not_confirmed`.** This is the most serious result. The actuator may still be powered and holding or driving its output. Tell the human at once that they should cut its power, then run nothing against it, not even read-only commands, until they have checked it. In both text and JSON mode the tool writes this summary to standard error first, before it writes anything to standard output, so that a person watching the terminal sees it, and so that it is not lost if standard output is a broken pipe; the exit code is 4 whatever happens to either stream.
 - **A safety abort** (`verdict: aborted`). The monitor stopped a moving actuator because a reading left the limits. The cause has to be understood first, and running again is how a near miss becomes damage.
 - **A device fault** (the `faults` item failed, or `stop_kind` is `device_fault`). Only a human can clear it, and they should know what caused it first.
 - **The actuator does not respond or stops answering** (`responds` failed, or `stop_kind` is `missed_replies`, `sample_gap`, `behind_schedule` or `call_time_exceeded`). Cables, power and the adapter's timeouts are for the human.

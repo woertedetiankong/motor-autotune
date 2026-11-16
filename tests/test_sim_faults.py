@@ -164,3 +164,24 @@ def test_unknown_fault_is_rejected():
     text = TEMPLATE.replace('# faults = ["wrong_zero"]', 'faults = ["gremlins"]')
     with pytest.raises(BenchFileError, match="unknown fault 'gremlins'"):
         parse_bench(text.encode())
+
+
+# == Regressions from the second outside review, 2026-11-16 ===========================
+
+
+def test_ignores_safe_state_never_confirms_it_and_keeps_driving():
+    servo = servo_with("ignores_safe_state")
+    servo.enable()
+    hold(servo, 0.2)
+    start_rad = servo.read([POSITION])[POSITION]
+    for _ in range(3):
+        before_s = servo.clock.now_s()
+        with pytest.raises(NoReply):
+            servo.enter_safe_state()
+        # It gives up within its declared bound on one call.
+        assert servo.clock.now_s() - before_s <= servo.describe().call_time_max_s * (1 + 1e-9)
+    # The request was lost: torque is still on and it still follows commands.
+    servo.command(POSITION, start_rad + FIVE_DEG_RAD)
+    samples = hold(servo, 0.5)
+    assert samples[-1][POSITION] - start_rad == pytest.approx(FIVE_DEG_RAD, rel=0.2)
+    assert servo.read_faults() == ()
